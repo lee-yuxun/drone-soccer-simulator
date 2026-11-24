@@ -5,6 +5,7 @@
   "type": "module",
   "scripts": {
     "build": "node scripts/export-models.mjs",
+    "build:pages": "node scripts/build-pages.mjs",
     "preview": "node scripts/server.mjs",
     "start": "node scripts/server.mjs",
     "test": "node --test",
