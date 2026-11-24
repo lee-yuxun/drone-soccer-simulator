@@ -2,6 +2,7 @@ import { $, button, make, store, read, download, csv, makeAudio, makeInput, huma
 import { controlDefaults, courseDefaults, field, profiles, ROLE_NAMES, STEP, TEAM_NAMES } from './config.js';
 import { gameCreate, doAction, tickGame } from './game.js';
 import { neutral } from './flight.js';
+import { padBindings, padValues } from './gamepad.js';
 import { levels, stageLabel } from './training.js';
 import { metrics } from './trace.js';
 import { createView } from './view.js';
@@ -54,15 +55,25 @@ let accumulator = 0;
 let last = performance.now();
 let lastHud = 0;
 let lastDraw = 0;
-let gamepadLabel;
+let controllerSignature;
+let calibrationState;
 let localPausedBeforeReplay = false;
 let timing = {};
 const input = makeInput(controls, action, saveControls);
+const touchLayout = matchMedia('(any-pointer: coarse), (max-width: 690px)');
+let virtualOverride;
+function updateVirtualControls() {
+  const shown = virtualOverride ?? touchLayout.matches;
+  $('small-sticks').hidden = !shown;
+  $('virtual-controls').setAttribute('aria-pressed', String(shown));
+  if (!shown) input.clearVirtual();
+}
+touchLayout.addEventListener('change', updateVirtualControls);
 $('virtual-controls').onclick = () => {
-  const button = $('virtual-controls');
-  const shown = $('small-sticks').classList.toggle('visible-sticks');
-  button.setAttribute('aria-pressed', String(shown));
+  virtualOverride = $('small-sticks').hidden;
+  updateVirtualControls();
 };
+updateVirtualControls();
 const replay = makeReplay(view, () => {
   if (cameraBeforeReplay === undefined) {
     cameraBeforeReplay = camera;
@@ -273,8 +284,10 @@ function updateHud(now) {
   setText(ui.speed, Math.hypot(...Object.values(player?.v ?? { x: 0, y: 0, z: 0 })).toFixed(2));
   setText(ui.collisions, player?.collisions ?? 0);
   const values = player?.input ?? neutral();
-  ui['left-stick'].style.transform = 'translate(' + (values.yaw * 21) + 'px,' + (-values.throttle * 21) + 'px)';
-  ui['right-stick'].style.transform = 'translate(' + (values.roll * 21) + 'px,' + (-values.pitch * 21) + 'px)';
+  ui['left-stick'].style.setProperty('--stick-x', values.yaw);
+  ui['left-stick'].style.setProperty('--stick-y', -values.throttle);
+  ui['right-stick'].style.setProperty('--stick-x', values.roll);
+  ui['right-stick'].style.setProperty('--stick-y', -values.pitch);
   setText(ui.pitch, deg(player?.pitch ?? 0));
   setText(ui.roll, deg(player?.roll ?? 0));
   setText(ui.heading, Math.round((((player?.yaw ?? 0) * 180 / Math.PI) % 360 + 360) % 360) % 360 + '°');
@@ -288,13 +301,11 @@ function updateHud(now) {
   ui.turtle.disabled = !player?.active || !player.flipped || replay.active;
   ui.stop.disabled = !player?.active || !player.armed || replay.active;
   ui.reset.disabled = mode === 'lan' || replay.active;
-  const padName = input.pad?.id;
-  setText(ui['input-status'], (padName ? 'USB／手把' : '鍵盤') + (mode === 'lan' ? ' · ' +
+  const padSource = input.pad ? input.profile ? 'ELRS／手把' : '手把待校正' : $('small-sticks').hidden ? '鍵盤' : '鍵盤／觸控';
+  setText(ui['input-status'], padSource + (mode === 'lan' ? ' · ' +
     (lan.online ? lan.latency + ' ms' : '離線') : ''));
-  if (padName !== gamepadLabel) {
-    gamepadLabel = padName;
-    setText($('pad-description'), padName ?? '插入遙控器或遊戲手把後，請按任一實體按鈕。');
-  }
+  $('controller-button').toggleAttribute('data-connected', Boolean(input.profile));
+  if ($('controller-dialog').open) updateControllerPanel();
   setText(ui['field-status'], [state.field.length, state.field.width, state.field.height].join(' × ') + ' m');
   const banner = titleForState(state);
   ui.banner.hidden = !banner || replay.active;
@@ -446,9 +457,12 @@ function openDialog(id) {
     const role = options.pilotRole === 'defender' ? 'defender' : 'striker';
     $('match-start-form').elements.namedItem('pilot-role').value = role;
   }
-  if (id === 'settings-dialog') {
-    input.keyButtons($('key-settings'));
-    renderPadSettings();
+  if (id === 'settings-dialog') input.keyButtons($('key-settings'));
+  if (id === 'controller-dialog' && !popup.open) {
+    controllerSignature = undefined;
+    calibrationState = undefined;
+    setText($('pad-detect'), '');
+    updateControllerPanel();
   }
   if (id === 'controls-dialog') table($('quick-keys'), [], [
     ...labelKeys.map((label, i) => [label, humanKey(controls.keys[i])]),
@@ -479,6 +493,7 @@ $('match-start-form').onsubmit = event => {
 };
 $('pause-dialog').addEventListener('close', () => { if (!replay.active) local.paused = false; });
 $('settings-dialog').addEventListener('close', () => input.cancel());
+$('controller-dialog').addEventListener('close', () => input.cancel());
 for (const id of ['arm', 'reset', 'turtle', 'stop', 'pause']) $(id).onclick = () => { action(id); $(id).blur(); };
 $('restart-run').onclick = () => { $('pause-dialog').close(); openMode(mode); };
 $('return-free').onclick = () => { $('pause-dialog').close(); openMode('free'); };
@@ -608,32 +623,106 @@ $('teacher-settings').replaceChildren(
   range(course, 'timeScale', '限時倍率', .75, 2, .05, saveTeacher),
   check(course, 'hints', '顯示訓練提示球', saveTeacher),
 );
+const controllerMeters = padBindings.map(({ key, name }) => {
+  const label = make('label', name);
+  const value = make('output', '0.00');
+  const meter = make('meter', '', { min: '-1', max: '1', value: '0' });
+  label.append(value, meter);
+  $('pad-meters').append(label);
+  return { key, value, meter };
+});
+
+function updateControllerPanel() {
+  const pad = input.pad;
+  const devices = input.devices;
+  const chosen = input.selectedKey;
+  const signature = JSON.stringify([chosen, devices, pad?.axes.length]);
+  if (signature !== controllerSignature) {
+    controllerSignature = signature;
+    $('pad-device').replaceChildren(make('option', '自動偵測', { value: '' }), ...devices.map(device =>
+      make('option', device.id || '控制器 ' + (device.index + 1), { value: device.key })));
+    $('pad-device').value = chosen;
+    $('pad-device').disabled = !devices.length;
+    $('pad-pairing').open = !pad;
+    renderPadSettings();
+  }
+  const ready = Boolean(input.profile);
+  const descriptor = pad ? (pad.id || '遊戲控制器') + ' · ' + pad.axes.length + ' 軸 · ' +
+    (ready ? '可操作' : pad.axes.length < 4 ? '需至少四軸' : '請校正') : input.padError ?? '';
+  setText($('pad-description'), descriptor || '等待控制器。配對後請動一下搖桿或按鍵。');
+  const calibration = input.calibration;
+  const running = calibration && !calibration.done && !calibration.error;
+  $('pad-calibrate').disabled = !pad || pad.axes.length < 4 || Boolean(running);
+  $('pad-cancel').hidden = !running;
+  $('pad-meters').hidden = !pad || !ready;
+  $('pad-advanced').hidden = !pad || Boolean(running);
+  if (calibration) {
+    const state = calibration.error || (calibration.done ? '四軸校正完成。移動搖桿可查看即時輸入。' :
+      calibration.returning ? '把搖桿放回中央。' : (calibration.axes.length + 1) + '／4　' +
+        padBindings[calibration.axes.length].instruction + '，其他搖桿保持置中。');
+    if (calibrationState !== state) {
+      calibrationState = state;
+      setText($('pad-detect'), state);
+      if (calibration.done) renderPadSettings();
+    }
+  }
+  if (!pad || !ready) return;
+  const values = padValues(input.profile, pad.axes);
+  for (const { key, value, meter } of controllerMeters) {
+    const amount = values[key];
+    meter.value = amount;
+    setText(value, amount.toFixed(2));
+  }
+}
+
 function renderPadSettings() {
-  const widgets = ['偏航', '油門', '滾轉', '俯仰'].map((axis, index) => {
+  if (!input.pad) {
+    $('pad-settings').replaceChildren();
+    return;
+  }
+  const profile = input.editProfile();
+  const save = () => input.saveProfile(profile);
+  const axes = Array.from({ length: input.pad.axes.length }, (_, number) => [number, '軸 ' + (number + 1)]);
+  const widgets = padBindings.map(({ name }, index) => {
     const group = make('div');
-    group.append(optionMenu(axis + '軸', Array.from({ length: 16 }, (_, number) =>
-      [number, '軸 ' + (number + 1)]), controls.axes[index], value => {
-      controls.axes[index] = Number(value); controls.centers[index] = 0; saveControls();
-    }), check(controls.reverse, index, '反轉', saveControls),
-    button('偵測' + axis, () => {
+    group.append(optionMenu(name + '軸', axes, profile.axes[index], value => {
+      profile.axes[index] = Number(value);
+      profile.centers[index] = 0;
+      save();
+    }), check(profile.reverse, index, '反轉', save),
+    button('偵測' + name, () => {
       const detected = input.detect(index, number => {
-        controls.centers[index] = 0;
-        setText($('pad-detect'), axis + '已配對軸 ' + (number + 1));
+        setText($('pad-detect'), name + '已配對軸 ' + (number + 1));
         renderPadSettings();
       });
-      setText($('pad-detect'), detected ? '請移動「' + axis + '」對應的搖桿。' : '尚未讀到已連線手把。');
+      setText($('pad-detect'), detected ? '請移動「' + name + '」對應的搖桿。' : '尚未讀到已連線手把。');
     }));
     return group;
   });
-  $('pad-settings').replaceChildren(range(controls, 'deadzone', '搖桿死區', 0, .3, .01, saveControls), ...widgets);
+  $('pad-settings').replaceChildren(range(profile, 'deadzone', '搖桿死區', 0, .3, .01, save), ...widgets);
 }
-$('pad-center').onclick = () => setText($('pad-detect'), input.center() ? '已記錄四軸中位。' : '尚未讀到已連線手把。');
-$('pad-clear').onclick = () => {
-  for (const key of ['axes', 'reverse', 'centers']) controls[key] = [...controlDefaults[key]];
-  controls.deadzone = controlDefaults.deadzone;
-  saveControls();
+$('pad-device').onchange = () => {
+  input.choosePad($('pad-device').value);
+  setText($('pad-detect'), '');
+};
+$('pad-calibrate').onclick = () => {
+  if (!input.startCalibration()) return;
+  calibrationState = undefined;
+  updateControllerPanel();
+};
+$('pad-cancel').onclick = () => {
+  input.cancelCalibration();
+  setText($('pad-detect'), '已取消校正。');
+};
+$('pad-center').onclick = () => {
+  setText($('pad-detect'), input.center() ? '已記錄四軸中位。' : '尚未讀到已連線手把。');
   renderPadSettings();
-  setText($('pad-detect'), '已恢復預設軸向。');
+};
+$('pad-clear').onclick = () => {
+  input.cancelCalibration();
+  input.clearProfile();
+  renderPadSettings();
+  setText($('pad-detect'), '已清除這支控制器的個別校正。');
 };
 
 table($('rules-body'), [], [

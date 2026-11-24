@@ -2,7 +2,7 @@
 <html lang="zh-Hant">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>足球無人機模擬器</title>
 <link rel="stylesheet" href="./src/sim/style.css">
 <script type="importmap">
@@ -50,13 +50,17 @@
         <div><b id="speed">0.00</b><span>速度 m/s</span></div>
         <div><b id="collisions">0</b><span>碰撞</span></div>
       </div>
-      <div id="small-sticks">
-        <div class="sticks">
-          <div class="stick" id="left-pocket" aria-label="虛擬左搖桿"><i id="left-stick"></i></div>
-          <div class="stick" id="right-pocket" aria-label="虛擬右搖桿"><i id="right-stick"></i></div>
-        </div>
-      </div>
       <p id="event-toast" class="toast" role="status" hidden></p>
+    </div>
+    <div id="small-sticks" hidden aria-label="觸控飛行雙搖桿">
+      <div class="stick-control">
+        <div class="stick" id="left-pocket" aria-label="左搖桿，油門與偏航"><i id="left-stick"></i></div>
+        <span>油門 · 偏航</span>
+      </div>
+      <div class="stick-control">
+        <div class="stick" id="right-pocket" aria-label="右搖桿，俯仰與滾轉"><i id="right-stick"></i></div>
+        <span>俯仰 · 滾轉</span>
+      </div>
     </div>
     <div class="actionbar">
       <button type="button" class="primary" id="arm">解鎖馬達 <kbd>Space</kbd></button>
@@ -66,6 +70,7 @@
       <button type="button" id="stop" class="danger">停槳</button>
       <div class="flight-tools">
         <button type="button" id="virtual-controls" aria-controls="small-sticks" aria-pressed="false">雙搖桿</button>
+        <button type="button" data-dialog="controller-dialog" id="controller-button">ELRS／手把</button>
         <button type="button" data-dialog="flight-dialog">飛行資訊</button>
         <button type="button" data-dialog="replay-dialog">進球軌跡</button>
       </div>
@@ -135,14 +140,33 @@
 <dialog id="settings-dialog">
   <div class="dialog-head"><h2>模擬設定</h2><button type="button" data-close>完成</button></div>
   <details open><summary>飛行與畫面</summary><div class="form-grid" id="flight-settings"></div></details>
-  <details><summary>USB 遙控器與按鍵</summary>
-    <p id="pad-description">插入遙控器或遊戲手把後，請按任一實體按鈕。</p>
-    <div class="button-row"><button type="button" id="pad-center">記錄搖桿中位</button><button type="button" id="pad-clear">恢復軸設定</button></div>
-    <p id="pad-detect"></p><div id="pad-settings" class="form-grid"></div>
-    <div id="key-settings" class="form-grid"></div>
-  </details>
+  <details><summary>鍵盤按鍵</summary><div id="key-settings" class="form-grid"></div></details>
   <details><summary>音效與畫質</summary><div class="form-grid" id="sound-settings"></div><button type="button" id="test-sound">試聽進球音效</button></details>
   <details><summary>課程與教師設定</summary><div class="form-grid" id="teacher-settings"></div></details>
+</dialog>
+<dialog id="controller-dialog" aria-labelledby="controller-title">
+  <div class="dialog-head"><h2 id="controller-title">ELRS／遊戲手把</h2><button type="button" data-close>完成</button></div>
+  <p id="pad-description" role="status">等待手機或平板辨識遙控器。配對後請動一下搖桿或按鍵。</p>
+  <details open id="pad-pairing">
+    <summary>手機和平板連線方式</summary>
+    <ol>
+      <li>藍牙：在相容的 ESP32 ELRS 發射模組選 <strong>ExpressLRS Lua → BLE Joystick</strong>，再到裝置的藍牙設定配對。</li>
+      <li>有線：以支援資料傳輸的 USB 線連接，必要時使用 OTG 轉接，並在 EdgeTX 遙控器選 <strong>USB Joystick</strong>。</li>
+      <li>回到這個頁面，動一下搖桿或按鍵。看到已偵測後，把兩支搖桿都放到中央，包含不會自動回中的油門。</li>
+    </ol>
+    <p>裝置與瀏覽器必須能把遙控器辨識成遊戲控制器。部分 iPhone／iPad 不會辨識特定遙控器。</p>
+  </details>
+  <label class="pad-device">控制器 <select id="pad-device"></select></label>
+  <div class="button-row">
+    <button type="button" class="primary" id="pad-calibrate" disabled>開始 Mode 2 校正</button>
+    <button type="button" id="pad-cancel" hidden>取消校正</button>
+  </div>
+  <p id="pad-detect" role="status"></p>
+  <div id="pad-meters" class="pad-meters" aria-label="即時四軸輸入" hidden></div>
+  <details id="pad-advanced" hidden><summary>手動軸向與死區</summary>
+    <div id="pad-settings" class="form-grid"></div>
+    <div class="button-row"><button type="button" id="pad-center">記錄搖桿中位</button><button type="button" id="pad-clear">清除這支控制器的校正</button></div>
+  </details>
 </dialog>
 <dialog id="rules-dialog">
   <div class="dialog-head"><h2>FAI 規則對照</h2><button type="button" data-close>關閉</button></div>

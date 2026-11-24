@@ -127,26 +127,78 @@ try {
   await capture('replay');
   await click('#replay-close');
   await waitUntil("document.querySelector('#camera').value === 'follow'", 'Rear follow view should resume after replay');
-  await click('[data-dialog=lan-dialog]');
-  await click('#lan-create');
-  await waitUntil("!document.querySelector('#lan-lobby').hidden", 'Browser room failed');
-  await click('#lan-leave');
-  await click('#lan-dialog [data-close]');
-  await command('Emulation.setDeviceMetricsOverride', {width: 390, height: 800, deviceScaleFactor: 1, mobile: true});
-  await command('Emulation.setTouchEmulationEnabled', {enabled:true, maxTouchPoints:2});
-  await waitUntil("innerWidth === 390 && document.documentElement.scrollWidth <= 390 && !!document.querySelector('#small-sticks #left-pocket')",
-    'Narrow screen overflow or virtual sticks not in viewport');
+  if (await evaluate("!document.querySelector('[data-dialog=lan-dialog]').hidden")) {
+    await click('[data-dialog=lan-dialog]');
+    await click('#lan-create');
+    await waitUntil("!document.querySelector('#lan-lobby').hidden", 'Browser room failed');
+    await click('#lan-leave');
+    await click('#lan-dialog [data-close]');
+  } else {
+    await click('[data-mode=free]');
+  }
+  await command('Emulation.setTouchEmulationEnabled', { enabled: true, maxTouchPoints: 2 });
+  async function touchLayout(width, height) {
+    await command('Emulation.setDeviceMetricsOverride', { width, height, deviceScaleFactor: 1, mobile: true });
+    await evaluate("window.scrollTo({top:0,behavior:'instant'})");
+    await waitUntil(`innerWidth === ${width} && !document.getElementById('small-sticks').hidden &&
+      document.documentElement.scrollWidth <= ${width}`, 'Touch layout did not fit');
+    const rect = id => evaluate(`document.getElementById('${id}').getBoundingClientRect().toJSON()`);
+    const [left, right] = await Promise.all([rect('left-pocket'), rect('right-pocket')]);
+    assert.ok(left.right < width / 2 && right.left > width / 2, 'Each thumb should have a separate side');
+    assert.ok(left.width >= 82 && right.width >= 82, 'Touch targets are too small');
+    return { left, right };
+  }
+  const portrait = await touchLayout(390, 844);
   await click('#arm');
-  const stick = await evaluate("document.querySelector('#left-pocket').scrollIntoView({block:'center',behavior:'instant'}); JSON.stringify(document.querySelector('#left-pocket').getBoundingClientRect())");
-  const rect = JSON.parse(stick);
-  const point = {x:Math.floor(rect.x+rect.width/2),y:Math.floor(rect.y+rect.height*.19)};
-  assert.equal(await evaluate(`document.elementFromPoint(${point.x}, ${point.y})?.id`), 'left-pocket');
-  await command('Input.dispatchTouchEvent', {type:'touchStart', touchPoints:[point]});
-  await waitUntil("+document.querySelector('#altitude').textContent > .65", 'Virtual throttle did not respond');
-  await command('Input.dispatchTouchEvent', {type:'touchEnd', touchPoints:[]});
+  const touch = (rect, id, x, y) => ({ id, x: Math.floor(rect.x + rect.width * x),
+    y: Math.floor(rect.y + rect.height * y) });
+  const left = touch(portrait.left, 1, .5, .18);
+  const right = touch(portrait.right, 2, .81, .5);
+  assert.equal(await evaluate(`document.elementFromPoint(${left.x}, ${left.y})?.id`), 'left-pocket');
+  assert.equal(await evaluate(`document.elementFromPoint(${right.x}, ${right.y})?.id`), 'right-pocket');
+  await command('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [left, right] });
+  await waitUntil("document.querySelectorAll('.stick[data-held]').length === 2 && " +
+    "Number(document.getElementById('altitude').textContent) > .65 && " +
+    "Number(document.getElementById('right-stick').style.getPropertyValue('--stick-x')) > .3",
+  'Two touch inputs should steer and lift simultaneously');
+  await command('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+  await waitUntil("!document.querySelector('.stick[data-held]')", 'Touch inputs did not return to neutral');
   await capture('narrow');
+  await touchLayout(844, 390);
+  await capture('landscape');
+  await touchLayout(834, 1194);
+  await capture('tablet');
+  await click('#virtual-controls');
+  assert.equal(await evaluate("document.getElementById('small-sticks').hidden"), true);
+  await click('#virtual-controls');
+  await click('#reset');
+
+  await evaluate(`
+    window.testPad = {id:'ELRS mock', index:0, mapping:'', connected:true, axes:[0,0,0,0,1,-1], buttons:[]};
+    Object.defineProperty(navigator,'getGamepads', { configurable:true, value:()=>window.testPad?.connected ? [window.testPad] : [] });
+  `);
+  await click('#controller-button');
+  await waitUntil("document.getElementById('pad-description').textContent.includes('ELRS mock') && " +
+    "document.getElementById('pad-description').textContent.includes('請校正')", 'Generic ELRS controller was not recognized');
+  await click('#pad-calibrate');
+  for (const [step, [axis, value]] of [[3,-.9],[2,.9],[0,.9],[1,-.9]].entries()) {
+    await waitUntil(`document.getElementById('pad-detect').textContent.includes('${step+1}／4')`, 'Wrong calibration step');
+    await evaluate(`window.testPad.axes[${axis}]=${value}`);
+    await waitUntil("document.getElementById('pad-detect').textContent.includes('放回中央')", 'Axis movement was not captured');
+    await evaluate(`window.testPad.axes[${axis}]=0`);
+  }
+  await waitUntil("document.getElementById('pad-detect').textContent.includes('四軸校正完成') && " +
+    "!document.getElementById('pad-meters').hidden", 'ELRS calibration did not complete');
+  await click('#controller-dialog [data-close]');
+  await click('#arm');
+  await evaluate('window.testPad.axes[2]=.94');
+  await waitUntil("Number(document.getElementById('altitude').textContent) > .65", 'Calibrated ELRS throttle did not take off');
+  await evaluate('window.testPad.connected=false');
+  await waitUntil("!document.getElementById('controller-button').hasAttribute('data-connected') && " +
+    "Number(document.getElementById('left-stick').style.getPropertyValue('--stick-y')) === 0",
+  'Disconnect should clear the selected controller input');
   assert.deepEqual(errors, []);
-  console.log('Chrome: default rear chase, solo striker and defender selection, grounded training, keyboard and touch takeoff, and goal replay; no rendering or runtime errors.');
+  console.log('Chrome: default rear chase, solo striker and defender selection, grounded training, portrait/landscape/tablet dual touch, ELRS calibration and disconnect, and goal replay; no rendering or runtime errors.');
 } finally {
   socket.close();
 }
