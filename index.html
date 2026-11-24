@@ -1,0 +1,196 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>足球無人機模擬器</title>
+<link rel="stylesheet" href="./src/sim/style.css">
+<script type="importmap">
+{"imports":{"three":"./node_modules/three/build/three.module.js","three/addons/":"./node_modules/three/examples/jsm/"}}
+</script>
+</head>
+<body>
+<header class="topbar">
+  <a class="brand" href="./" aria-label="足球無人機模擬器">
+    <span class="brand-icon" aria-hidden="true">◎</span>
+    <span><strong>足球無人機</strong><small>飛行模擬器</small></span>
+  </a>
+  <nav class="modes" aria-label="模式">
+    <button type="button" data-mode="free" aria-pressed="true">自由飛行</button>
+    <button type="button" data-mode="training" aria-pressed="false">30 級訓練</button>
+    <button type="button" data-mode="match" aria-pressed="false">單機比賽</button>
+    <button type="button" data-dialog="lan-dialog" data-mode-entry="lan">區網房間</button>
+  </nav>
+  <div class="utilities">
+    <button type="button" data-dialog="rules-dialog">規則</button>
+    <button type="button" data-dialog="settings-dialog">設定</button>
+  </div>
+</header>
+<main class="shell">
+  <section class="cockpit" aria-label="模擬器">
+    <header class="statbar">
+      <div class="team red"><span class="team-symbol" aria-hidden="true">▲</span><span>紅隊</span><strong id="red-score">00</strong></div>
+      <div class="timebox"><small id="time-label">飛行時間</small><strong id="clock">00:00</strong></div>
+      <div class="team blue"><strong id="blue-score">00</strong><span>藍隊</span><span class="team-symbol" aria-hidden="true">◆</span></div>
+    </header>
+    <div class="viewport">
+      <div id="stage"></div>
+      <div class="lensbar">
+        <label for="camera">視角</label>
+        <select id="camera" aria-label="飛行視角">
+          <option value="sideline">側邊</option><option value="follow" selected>後方追蹤</option><option value="fpv">FPV</option>
+          <option value="goal">球門後方</option><option value="top">俯視</option><option value="orbit">自由觀戰</option>
+        </select>
+      </div>
+      <p id="role-tag" class="role-chip">▲ 紅隊 · 得分手</p>
+      <div id="banner" class="banner" role="status" hidden></div>
+      <div id="webgl-fallback" class="banner" hidden>瀏覽器無法啟用 WebGL。請開啟硬體加速，或改用支援 WebGL 2 的瀏覽器。</div>
+      <div class="telemetry" aria-label="飛行數據">
+        <div><b id="altitude">0.00</b><span>高度 m</span></div>
+        <div><b id="speed">0.00</b><span>速度 m/s</span></div>
+        <div><b id="collisions">0</b><span>碰撞</span></div>
+      </div>
+      <div id="small-sticks">
+        <div class="sticks">
+          <div class="stick" id="left-pocket" aria-label="虛擬左搖桿"><i id="left-stick"></i></div>
+          <div class="stick" id="right-pocket" aria-label="虛擬右搖桿"><i id="right-stick"></i></div>
+        </div>
+      </div>
+      <p id="event-toast" class="toast" role="status" hidden></p>
+    </div>
+    <div class="actionbar">
+      <button type="button" class="primary" id="arm">解鎖馬達 <kbd>Space</kbd></button>
+      <button type="button" id="reset">重設 <kbd>Z</kbd></button>
+      <button type="button" id="turtle">翻正 <kbd>T</kbd></button>
+      <button type="button" id="pause">暫停 <kbd>Esc</kbd></button>
+      <button type="button" id="stop" class="danger">停槳</button>
+      <div class="flight-tools">
+        <button type="button" id="virtual-controls" aria-controls="small-sticks" aria-pressed="false">雙搖桿</button>
+        <button type="button" data-dialog="flight-dialog">飛行資訊</button>
+        <button type="button" data-dialog="replay-dialog">進球軌跡</button>
+      </div>
+    </div>
+    <div id="training-strip" class="training-strip" hidden></div>
+  </section>
+  <section id="replay-controls" class="card replay" hidden>
+    <div class="card-heading"><h2>進球軌跡回放</h2><button type="button" id="replay-close">返回飛行</button></div>
+    <div class="replay-row">
+      <button type="button" id="replay-play">播放</button><button type="button" id="replay-frame">逐格</button>
+      <button type="button" id="replay-restart">從頭播放</button><label>速度 <select id="replay-speed"><option>.25</option><option>.5</option><option selected>1</option><option>2</option></select> ×</label>
+      <input id="replay-time" type="range" min="0" max="1" value="0" step=".01" aria-label="回放時間"><output id="replay-clock">0.00 s</output>
+      <label>色彩 <select id="replay-paint"><option value="team">隊色</option><option value="velocity">速度</option><option value="height">高度</option></select></label>
+      <button type="button" id="replay-png">匯出 PNG</button>
+    </div>
+    <div id="replay-players"></div>
+    <p id="replay-metrics"></p>
+  </section>
+  <footer>課程／模擬器設計：李宇軒 Xuan</footer>
+</main>
+
+<dialog id="match-start-dialog" aria-labelledby="match-start-title">
+  <div class="dialog-head"><h2 id="match-start-title">單機比賽</h2><button type="button" data-close>取消</button></div>
+  <form id="match-start-form">
+    <fieldset class="match-roles">
+      <legend>選擇紅隊角色</legend>
+      <label>
+        <input type="radio" name="pilot-role" value="striker" checked>
+        <span><strong>得分手</strong><small>操控紅隊唯一能穿門得分的無人機。</small></span>
+      </label>
+      <label>
+        <input type="radio" name="pilot-role" value="defender">
+        <span><strong>防守</strong><small>攔截對方得分手，由 AI 隊友負責進攻。</small></span>
+      </label>
+    </fieldset>
+    <div class="button-row"><button type="submit" class="primary">開始比賽</button></div>
+  </form>
+</dialog>
+
+<dialog id="flight-dialog">
+  <div class="dialog-head"><h2 id="mode-title">自由飛行</h2><button type="button" data-close>關閉</button></div>
+  <p id="mode-copy">在紅藍球場練習起飛、懸停與穿門。</p>
+  <div class="flight-details">
+    <div class="data-row"><span>飛行狀態</span><strong id="flight-status">待解鎖</strong></div>
+    <div class="data-row"><span>輸入</span><strong id="input-status">鍵盤</strong></div>
+    <div class="data-row"><span>場地</span><strong id="field-status">6 × 3 × 3 m</strong></div>
+  </div>
+  <div class="attitude"><span>俯仰 <b id="pitch">0°</b></span><span>滾轉 <b id="roll">0°</b></span><span>航向 <b id="heading">0°</b></span></div>
+  <div id="mode-extra"></div>
+  <div class="button-row">
+    <button type="button" data-dialog="controls-dialog">操作按鍵</button>
+    <button type="button" data-dialog="safety-dialog">飛行安全</button>
+    <button type="button" data-dialog="records-dialog">訓練成績</button>
+    <a href="./models.html">3D 模型</a>
+  </div>
+</dialog>
+<dialog id="pause-dialog">
+  <div class="dialog-head"><h2>飛行暫停</h2><button type="button" data-close>關閉</button></div>
+  <div class="button-row"><button type="button" class="primary" data-close>繼續飛行</button><button type="button" id="restart-run">重新開始</button><button type="button" data-dialog="controls-dialog">操作說明</button><button type="button" data-dialog="safety-dialog">飛行安全</button><button type="button" id="return-free">返回自由飛行</button></div>
+</dialog>
+<dialog id="controls-dialog">
+  <div class="dialog-head"><h2>操作說明</h2><button type="button" data-close>關閉</button></div>
+  <table><thead><tr><th>操作</th><th>按鍵</th></tr></thead><tbody id="quick-keys"></tbody></table>
+  <p>也可用滑鼠或觸控拖曳面板上的雙搖桿。先解鎖馬達，再升高到門心。保持同一高度，從中場朝底線飛，整顆護籠穿過圓門才得分。</p>
+  <p>進階手動模式的傾斜會減少垂直推力，轉向或平移時可補油門。</p>
+</dialog>
+<dialog id="settings-dialog">
+  <div class="dialog-head"><h2>模擬設定</h2><button type="button" data-close>完成</button></div>
+  <details open><summary>飛行與畫面</summary><div class="form-grid" id="flight-settings"></div></details>
+  <details><summary>USB 遙控器與按鍵</summary>
+    <p id="pad-description">插入遙控器或遊戲手把後，請按任一實體按鈕。</p>
+    <div class="button-row"><button type="button" id="pad-center">記錄搖桿中位</button><button type="button" id="pad-clear">恢復軸設定</button></div>
+    <p id="pad-detect"></p><div id="pad-settings" class="form-grid"></div>
+    <div id="key-settings" class="form-grid"></div>
+  </details>
+  <details><summary>音效與畫質</summary><div class="form-grid" id="sound-settings"></div><button type="button" id="test-sound">試聽進球音效</button></details>
+  <details><summary>課程與教師設定</summary><div class="form-grid" id="teacher-settings"></div></details>
+</dialog>
+<dialog id="rules-dialog">
+  <div class="dialog-head"><h2>FAI 規則對照</h2><button type="button" data-close>關閉</button></div>
+  <p>FAI Sporting Code Volume F9 2026 第 2 版 · 2026 年 6 月 1 日生效 · 模擬規則 0.1</p>
+  <p><a href="https://www.fai.org/page/sporting-rules-0" target="_blank" rel="noopener">FAI 官方規則來源</a></p>
+  <table><thead><tr><th>FAI 規則</th><th>模擬器設定</th><th>性質</th></tr></thead><tbody id="rules-body"></tbody></table>
+</dialog>
+<dialog id="safety-dialog">
+  <div class="dialog-head"><h2>飛行安全</h2><button type="button" data-close>關閉</button></div>
+  <p>沿著清單檢查。遇到異常，先停槳，提醒旁人，隔離場地，再由老師處理。</p>
+  <fieldset id="checklist">
+    <legend>起飛前巡檢</legend>
+    <label><input type="checkbox"> 防護籠與螺旋槳固定</label>
+    <label><input type="checkbox"> 電池外觀無異常，已牢固固定</label>
+    <label><input type="checkbox"> 遙控器連線、頻率與緊急停槳已確認</label>
+    <label><input type="checkbox"> 網籠封閉，場地淨空，人員站在安全區</label>
+  </fieldset>
+  <details><summary>危害與風險分級</summary><p>使用發生機率 × 影響程度評估風險。低風險可在監督下練習。中風險要加上隔離或改用模擬。高風險（例如電池膨脹或有人闖入）立即停止。</p><p>先移開危害，再用模擬替代、網籠隔離、飛行員分區與護眼裝備減少接觸。</p></details>
+  <details><summary>卡網、翻覆、斷線或低電量</summary><p>立刻停槳並警示旁人。卡網或碰撞後等老師處理。翻覆時先確認周圍無人。低電量時在安全區降落並交由老師檢查。</p></details>
+  <p>實機飛行須遵循教練指導、場地規範與正式操作程序。</p>
+  <button type="button" class="primary" id="confirm-check" disabled>確認完成巡檢</button>
+</dialog>
+<dialog id="lan-dialog">
+  <div class="dialog-head"><h2>區網房間</h2><button type="button" data-close>關閉</button></div>
+  <div id="lan-status" role="status">使用房主裝置顯示的 Wi‑Fi 網址。</div>
+  <section id="lan-entry">
+    <div class="button-row"><label>隊伍大小 <select id="lan-size"><option value="3">3v3</option><option value="5">5v5</option></select></label><button type="button" class="primary" id="lan-create">建立房間</button></div>
+    <form id="lan-join-form" class="button-row"><label>房間代碼 <input id="lan-code" maxlength="4" pattern="[0-9A-Fa-f]{4}" type="text" required></label><button type="submit">加入房間</button></form>
+  </section>
+  <section id="lan-lobby" hidden>
+    <p id="lan-room"></p>
+    <div id="seats" class="seats"></div>
+    <div id="room-options" class="form-grid"></div>
+    <div class="button-row"><button type="button" id="lan-watch">觀戰席</button><button type="button" id="lan-ready">準備</button><button type="button" id="lan-start" class="primary">開始比賽</button><button type="button" id="lan-leave">離開房間</button></div>
+  </section>
+</dialog>
+<dialog id="records-dialog">
+  <div class="dialog-head"><h2>本機訓練成績</h2><button type="button" data-close>關閉</button></div>
+  <div class="button-row"><label>學員代號 <input id="student" maxlength="20" value="PILOT"></label><button type="button" id="export-records">匯出 CSV</button><button type="button" id="training-demo">目前關卡路線示範</button></div>
+  <div id="record-table"></div>
+</dialog>
+<dialog id="replay-dialog">
+  <div class="dialog-head"><h2>進球軌跡</h2><button type="button" data-close>關閉</button></div>
+  <p>回放供教學與賽後分析。正式裁判依現場程序判定。</p>
+  <div class="button-row"><label>範圍 <select id="replay-range"><option value="highlight">精彩片段</option><option value="attack">完整進攻</option></select></label>
+    <button type="button" id="compare-goals">比較全場路線</button><button type="button" id="export-json">匯出 JSON</button><button type="button" id="export-goals">匯出 CSV</button></div>
+  <div id="goal-list"></div>
+</dialog>
+<script type="module" src="./src/sim/app.js"></script>
+</body>
+</html>

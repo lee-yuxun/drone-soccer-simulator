@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>足球無人機｜3D 模型預覽</title>
+<link rel="stylesheet" href="./src/style.css">
+<script type="importmap">
+{"imports":{"three":"./node_modules/three/build/three.module.js","three/addons/":"./node_modules/three/examples/jsm/"}}
+</script>
+</head>
+<body>
+<main>
+  <header>
+    <p class="category">足球無人機模擬器</p>
+    <h1>3D 模型預覽</h1>
+  </header>
+  <nav aria-label="模型">
+    <button type="button" data-model="arena" aria-pressed="true">球場</button>
+    <button type="button" data-model="drone" aria-pressed="false">無人機</button>
+    <button type="button" data-model="controller" aria-pressed="false">遙控器</button>
+  </nav>
+  <section class="layout" aria-label="模型預覽與規格">
+    <div class="viewport">
+      <div id="stage" aria-label="3D 模型"></div>
+      <div class="view-tools" aria-label="視角">
+        <button type="button" data-view="default">斜視</button>
+        <button type="button" data-view="front">正視</button>
+        <button type="button" data-view="top" id="top-view">俯視</button>
+      </div>
+      <p class="hint">拖曳旋轉 · 捲動縮放</p>
+      <p id="status" role="status">載入中…</p>
+    </div>
+    <aside>
+      <h2 id="model-name">充氣式球場</h2>
+      <p id="model-description"></p>
+      <dl id="specs"></dl>
+      <label id="toggle-layer"><input type="checkbox" checked> <span></span></label>
+      <a id="download" href="./assets/arena.glb" download>下載 GLB <span aria-hidden="true">↓</span></a>
+    </aside>
+  </section>
+</main>
+<script type="module" src="./src/preview.js"></script>
+</body>
+</html>
