@@ -264,7 +264,6 @@ function titleForState(state) {
   }
   if (state.phase === 'penalty') return TEAM_NAMES[state.penalty.team] + '罰球　' + Math.ceil(state.penalty.lasts);
   if (state.phase === 'golden') return '黃金進球';
-  if (local.training?.result && mode === 'training') return local.training.result.pass ? 'PASS · 通過' : 'RETRY · 再練一次';
   return '';
 }
 
@@ -285,6 +284,7 @@ function updateHud(now) {
   setText(ui.clock, clock(timerValue));
   setText(ui['role-tag'], player ? (player.team ? '◆ ' : '▲ ') + TEAM_NAMES[player.team] + ' · ' +
     ROLE_NAMES[player.role] : '觀戰席');
+  ui['role-tag'].hidden = Boolean(training);
   ui['role-tag'].style.color = player?.team === 1 ? 'var(--blue)' : '';
   setText(ui.altitude, (player?.p.y ?? 0).toFixed(2));
   setText(ui.speed, Math.hypot(...Object.values(player?.v ?? { x: 0, y: 0, z: 0 })).toFixed(2));
@@ -310,15 +310,16 @@ function updateHud(now) {
   const nearWall = player && (Math.abs(player.p.x) > state.field.length / 2 - .27 ||
     Math.abs(player.p.z) > state.field.width / 2 - .27 || player.p.y > state.field.height - .27);
   const tipping = training?.tipRemaining > 0;
+  const finishedTraining = Boolean(training?.result);
   const flightStatus = player ? (!player.active ? '暫停上場 · 罰球中' : tipping ? '正在原地翻覆' :
     player.flipped ? '翻覆 · 落地後按 T' : player.recovering ? '翻正中' :
     player.armed ? state.blocked[player.team] ? '回己方半場' : nearWall ? '接近網籠' : '已解鎖' : '待解鎖') : '觀戰';
   setText(ui['flight-status'], flightStatus);
   ui.arm.firstChild.nodeValue = player?.armed ? '鎖定馬達 ' : '解鎖馬達 ';
-  ui.arm.disabled = !player?.active || player.flipped || Boolean(player.recovering) || tipping ||
+  ui.arm.disabled = !player?.active || player.flipped || Boolean(player.recovering) || tipping || finishedTraining ||
     ['inspection', 'break', 'finished'].includes(state.phase) || replay.active;
-  ui.turtle.disabled = !player?.active || !player.flipped || replay.active;
-  ui.stop.disabled = !player?.active || !player.armed || replay.active;
+  ui.turtle.disabled = !player?.active || !player.flipped || finishedTraining || replay.active;
+  ui.stop.disabled = !player?.active || !player.armed || finishedTraining || replay.active;
   ui.reset.disabled = mode === 'lan' || replay.active;
   const padSource = input.pad ? input.profile ? 'ELRS／手把' : '手把待校正' : $('small-sticks').hidden ? '鍵盤' : '鍵盤／觸控';
   setText(ui['input-status'], padSource + (mode === 'lan' ? ' · ' +
@@ -326,13 +327,16 @@ function updateHud(now) {
   $('controller-button').toggleAttribute('data-connected', Boolean(input.profile));
   if ($('controller-dialog').open) updateControllerPanel();
   setText(ui['field-status'], [state.field.length, state.field.width, state.field.height].join(' × ') + ' m');
-  const banner = titleForState(state);
+  const banner = finishedTraining ? '' : titleForState(state);
   ui.banner.hidden = !banner || replay.active;
   setText(ui.banner, banner);
   if (now > toastUntil) ui['event-toast'].hidden = true;
-  if (timing.progress && training) {
+  if (training) {
+    $('training-strip').hidden = replay.active;
+    $('training-check').hidden = state.phase !== 'inspection';
+    $('training-result').hidden = !finishedTraining || replay.active;
     const stage = training.level.stages[training.stage];
-    timing.progress.value = training.stage;
+    $('training-progress').value = training.stage;
     const step = stage ? (training.stage + 1) + '/' + training.level.stages.length + ' · ' +
       stageLabel(stage) + (stage.seconds ? '　' + training.hold.toFixed(1) + '/' + stage.seconds + ' 秒' : '') : '路線已完成';
     let instruction = step;
@@ -345,7 +349,7 @@ function updateHud(now) {
     } else if (training.level.startTip && stage?.type === 'point' && !player?.armed) {
       instruction = '已翻正，解鎖後垂直起飛';
     }
-    setText(timing.segment, instruction);
+    setText($('training-step'), instruction);
     if (training.result && !resultSaved) saveResult(training);
   }
   const setsText = state.sets?.length ? state.sets.map((score, index) =>
@@ -388,23 +392,25 @@ function matchOptions(target, includeSize = false) {
 function renderMode() {
   timing = {};
   const extra = ui['mode-extra'];
-  const strip = $('training-strip');
+  const selectorSlot = $('training-controls');
+  const result = $('training-result');
   extra.replaceChildren();
-  strip.replaceChildren();
-  strip.hidden = mode !== 'training';
+  selectorSlot.replaceChildren();
+  selectorSlot.hidden = mode !== 'training';
+  $('training-strip').hidden = mode !== 'training';
+  result.replaceChildren();
+  result.hidden = true;
   if (mode === 'training') {
     const training = local.training;
     setText(ui['mode-title'], training.level.title);
     setText(ui['mode-copy'], training.level.help);
+    setText($('training-title'), '第 ' + selectedLevel + ' 關 · ' + training.level.title);
+    setText($('training-help'), training.level.help);
+    $('training-progress').max = training.level.stages.length;
     const selector = optionMenu('選擇訓練關卡', levels.map((level, i) =>
       [i + 1, (i < 10 ? '雛鳥' : i < 20 ? '麻雀' : '隼鷹') + ' ' + (i + 1) + '｜' + level.title]),
-      selectedLevel, chosen => { selectedLevel = Number(chosen); store('level', selectedLevel); openMode('training'); }, 'level');
-    timing.segment = make('span');
-    timing.progress = make('progress', '', { max: training.level.stages.length, value: 0, 'aria-label': '訓練進度' });
-    const progress = make('div', '', { class: 'training-progress' });
-    progress.append(timing.segment, timing.progress);
-    strip.append(selector, progress);
-    if (training.level.stages[0]?.type === 'check') strip.append(button('起飛前巡檢', () => openDialog('safety-dialog')));
+      selectedLevel, chosen => startLevel(Number(chosen)), 'level');
+    selectorSlot.append(selector);
   } else if (mode === 'match' || mode === 'lan') {
     const state = stateNow();
     setText(ui['mode-title'], mode === 'lan' ? '區網比賽' : matchNames[local.matchKind]);
@@ -430,6 +436,13 @@ function renderMode() {
   }
 }
 
+function startLevel(level) {
+  selectedLevel = level;
+  store('level', level);
+  input.clear();
+  openMode('training');
+}
+
 function saveResult(training) {
   resultSaved = true;
   const result = training.result;
@@ -437,17 +450,24 @@ function saveResult(training) {
   const row = { student: tag, date: new Date().toISOString(), level: selectedLevel, ...result };
   records = [row, ...records].slice(0, 350);
   store('scores', records);
-  const pane = make('div', '', { class: 'result' + (result.pass ? '' : ' fail') });
-  pane.append(make('strong', (result.pass ? 'PASS' : 'RETRY') + ' · ' + result.score + ' 分'),
-    make('p', result.elapsed.toFixed(1) + ' 秒 · 碰撞 ' + result.collisions + ' 次 · 平均偏差 ' +
-      result.deviation.toFixed(2) + ' m · 漏點 ' + result.missed),
-    make('p', result.pass ? '可以挑戰下一關。' : result.missed ? '依亮起的提示球逐點完成。' :
-      result.collisions ? '接近球門與邊界時先減速。' : '降低傾角、穩住高度，再沿提示路線飛行。'));
-  pane.append(button('再練一次', () => openMode('training')));
-  if (selectedLevel < levels.length) pane.append(button('下一關', () => {
-    selectedLevel++; store('level', selectedLevel); openMode('training');
-  }));
-  $('training-strip').append(pane);
+  const pane = $('training-result');
+  const hasNext = result.pass && selectedLevel < levels.length;
+  const title = make('h2', result.pass ? (hasNext ? '第 ' + selectedLevel + ' 關通過' : '最終關通過') : '第 ' + selectedLevel + ' 關未通過',
+    { id: 'training-result-title', tabindex: '-1' });
+  const actions = make('div', '', { class: 'training-result-actions' });
+  if (hasNext) actions.append(button('下一關', () => startLevel(selectedLevel + 1), { class: 'primary' }));
+  actions.append(button('再試一次', () => startLevel(selectedLevel), hasNext ? undefined : { class: 'primary' }));
+  pane.classList.toggle('fail', !result.pass);
+  pane.append(title,
+    make('p', (result.pass ? 'PASS' : 'RETRY') + ' · ' + result.score + ' 分 · ' + result.elapsed.toFixed(1) + ' 秒'),
+    make('p', '碰撞 ' + result.collisions + ' 次 · 平均偏差 ' + result.deviation.toFixed(2) + ' m · 漏點 ' + result.missed));
+  if (!result.pass) pane.append(make('p', result.missed ? '依亮起的提示圈逐點完成。' :
+    result.collisions ? '接近球門與邊界時先減速。' : '穩住高度，再沿提示路線飛行。'));
+  pane.append(actions);
+  if (!pane.hidden && !document.querySelector('dialog[open]')) {
+    pane.scrollIntoView({ block: 'nearest' });
+    title.focus({ preventScroll: true });
+  }
 }
 
 function labelTouchControls() {

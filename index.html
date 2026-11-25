@@ -45,6 +45,13 @@
         </select>
       </div>
       <p id="role-tag" class="role-chip">▲ 紅隊 · 得分手</p>
+      <section id="training-strip" class="training-strip" aria-labelledby="training-title" hidden>
+        <h2 id="training-title"></h2>
+        <p id="training-help"></p>
+        <p id="training-step"></p>
+        <progress id="training-progress" aria-label="訓練進度" value="0"></progress>
+        <button type="button" id="training-check" data-dialog="safety-dialog" hidden>起飛前巡檢</button>
+      </section>
       <div id="banner" class="banner" role="status" hidden></div>
       <div id="webgl-fallback" class="banner" hidden>瀏覽器無法啟用 WebGL。請開啟硬體加速，或改用支援 WebGL 2 的瀏覽器。</div>
       <div class="telemetry" aria-label="飛行數據">
@@ -53,6 +60,7 @@
         <div><b id="collisions">0</b><span>碰撞</span></div>
       </div>
       <p id="event-toast" class="toast" role="status" hidden></p>
+      <section id="training-result" class="result" aria-labelledby="training-result-title" hidden></section>
     </div>
     <div id="small-sticks" hidden aria-label="觸控飛行雙搖桿">
       <div class="stick-control">
@@ -84,7 +92,7 @@
       <button type="button" id="stop-p2">玩家 2 停槳（N）</button>
       <small>I／K 升降 · J／L 轉向 · U／O 前後 · Y／P 左右</small>
     </div>
-    <div id="training-strip" class="training-strip" hidden></div>
+    <div id="training-controls" class="training-controls" hidden></div>
   </section>
   <section id="replay-controls" class="card replay" hidden>
     <div class="card-heading"><h2>進球軌跡回放</h2><button type="button" id="replay-close">返回飛行</button></div>

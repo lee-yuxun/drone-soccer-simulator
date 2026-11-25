@@ -85,6 +85,8 @@ try {
   await waitUntil("document.querySelector('#altitude').textContent === '0.10'", 'Keyboard reset did not restore takeoff');
   await click('[data-mode=training]');
   await select('level', '2');
+  assert.equal(await evaluate("!document.querySelector('.viewport #training-strip').hidden && " +
+    "document.querySelector('#training-help').textContent.includes('朝前飛')"), true);
   await new Promise(resolve => setTimeout(resolve, 350));
   await waitUntil("document.querySelector('#altitude').textContent === '0.10' && document.querySelector('#training-strip').textContent.includes('垂直起飛')",
     'Airborne drill should wait grounded until the pilot takes off');
@@ -100,12 +102,27 @@ try {
   await waitUntil("document.querySelector('.result')?.textContent.includes('PASS')", 'Turtle drill did not pass');
   await key('KeyW', 'w', 87, 'keyUp');
   await capture('training');
+  await waitUntil("!document.querySelector('.viewport #training-result').hidden && " +
+    "[...document.querySelectorAll('#training-result button')].map(button => button.textContent).join() === '下一關,再試一次'",
+    'Passed drill should automatically show next and retry in the flight view');
+  await click('#training-result .primary');
+  await waitUntil("document.querySelector('#level').value === '20' && document.querySelector('#training-result').hidden",
+    'Next should load the next drill and clear the last result');
   await click('[data-dialog=flight-dialog]');
   await waitUntil("document.querySelector('#flight-dialog').open", 'Flight information did not open');
   await click('[data-dialog=records-dialog]');
   await waitUntil("document.querySelector('#record-table')?.textContent.includes('PASS')", 'Training result not stored');
   await click('#records-dialog [data-close]');
   await click('#flight-dialog [data-close]');
+  await select('level', '25');
+  await waitUntil("!document.querySelector('#training-result').hidden && " +
+    "document.querySelector('#training-result h2').textContent.includes('未通過')",
+    'Timed-out drill should automatically show its result', 22000);
+  assert.equal(await evaluate("[...document.querySelectorAll('#training-result button')].map(button => button.textContent).join()"),
+    '再試一次');
+  await click('#training-result .primary');
+  await waitUntil("document.querySelector('#level').value === '25' && document.querySelector('#training-result').hidden && " +
+    "document.querySelector('#banner').textContent.includes('準備起飛')", 'Retry should restart the same drill');
   await click('[data-dialog=settings-dialog]');
   await waitUntil("document.querySelector('#settings-dialog').open && document.querySelector('[data-stick-mode]')", 'Pilot settings missing');
   await click('[data-settings=media]');

@@ -81,8 +81,13 @@ kbd{font:600 .72rem ui-monospace,monospace;padding:2px 4px;border-radius:3px;bac
 #mode-extra select{width:100%;min-width:0;padding:6px 8px}
 #mode-extra button{margin-top:8px;width:100%;font-size:.84rem}
 progress{width:100%;height:9px;accent-color:var(--accent)}
-.result{margin-top:9px;border-radius:7px;padding:8px 10px;background:#223127;color:#e4faab;font-size:.88rem}
-.result.fail{background:#412734;color:#ffb9c7}
+.result{position:absolute;z-index:4;top:50%;left:50%;transform:translate(-50%,-50%);width:min(350px,calc(100% - 24px));max-height:calc(100% - 20px);overflow:auto;padding:clamp(12px,3vw,20px);border:1px solid #83964b;border-radius:11px;background:#142116fa;color:#edf5fc;box-shadow:0 10px 34px #050b137f;text-align:center;font-size:.88rem}
+.result.fail{background:#30202bf9;border-color:#b8687a}
+.result h2{margin:0;color:var(--accent);font-size:1.22rem;line-height:1.25}
+.result.fail h2{color:#ffb9c7}
+.result p{margin:5px 0;color:#d9e4ef}
+.training-result-actions{display:flex;flex-wrap:wrap;justify-content:center;gap:8px;margin-top:12px}
+.training-result-actions button{min-height:42px}
 footer{padding:14px 0 0;color:var(--muted);font-size:.79rem}
 dialog{width:min(750px,calc(100% - 26px));padding:20px;border:1px solid #4f6580;border-radius:11px;background:#152232;color:var(--text);max-height:calc(100dvh - 30px);overflow:auto}
 dialog::backdrop{background:#050b13b8}
@@ -115,13 +120,15 @@ td,th{padding:6px 8px;border-bottom:1px solid var(--line);text-align:left;vertic
 @media(max-width:430px){.lensbar label{display:none}.telemetry div{min-width:58px}.actionbar button{padding:6px 8px}}
 
 .flight-tools{margin-left:auto;display:flex;gap:7px;flex-wrap:wrap}
-.training-strip{display:flex;flex-wrap:wrap;gap:10px 18px;padding:8px 12px 12px;border-top:1px solid var(--line);align-items:center;font-size:.86rem}
-.training-strip label{display:flex;flex-wrap:wrap;gap:5px 9px;align-items:center}
-.training-strip select{max-width:100%;padding:5px 8px}
-.training-progress{display:grid;gap:4px;flex:1 1 180px;max-width:360px;color:var(--muted)}
-.training-strip .result{flex:1 0 100%;margin-top:0}
-.training-strip .result p{margin:4px 0}
-.training-strip .result button{margin-right:7px}
+.training-strip{position:absolute;z-index:3;top:14px;right:14px;width:min(340px,calc(100% - 180px));padding:9px 11px;border:1px solid #3a4b60;border-radius:8px;background:#0e1928ed;pointer-events:none}
+.training-strip h2{margin:0;font-size:.92rem;line-height:1.3}
+.training-strip p{margin:4px 0;font-size:.8rem;line-height:1.36;color:var(--muted)}
+#training-step{color:var(--accent);font-weight:650}
+.training-strip progress{display:block;margin-top:6px;height:5px}
+#training-check{margin-top:8px;padding:5px 8px;font-size:.8rem;pointer-events:auto}
+.training-controls{padding:7px 12px;border-top:1px solid var(--line);font-size:.86rem}
+.training-controls label{display:flex;flex-wrap:wrap;gap:5px 9px;align-items:center}
+.training-controls select{max-width:100%;padding:5px 8px}
 .flight-details{display:grid;grid-template-columns:repeat(auto-fit,minmax(145px,1fr));column-gap:14px}
 #small-sticks {
   --stick-size: clamp(88px, 24vw, 132px);
@@ -143,9 +150,12 @@ td,th{padding:6px 8px;border-bottom:1px solid var(--line);text-align:left;vertic
 #pad-detect:empty { display: none; }
 @media(max-width:690px) {
   .flight-tools{margin-left:0}
-  .training-strip label{flex:1 0 100%}
+  .training-strip{top:10px;right:10px;width:min(315px,calc(100% - 175px));padding:7px 8px}
+  .training-strip h2{font-size:.86rem}
+  .training-strip p{font-size:.76rem}
 }
 @media(max-width:430px) {
+  .training-strip{width:calc(100% - 132px)}
   .telemetry span{font-size:.75rem}
   .telemetry div{min-width:48px;padding:0 4px}
   .topbar button{padding-block:7px;min-height:36px}
@@ -176,7 +186,7 @@ td,th{padding:6px 8px;border-bottom:1px solid var(--line);text-align:left;vertic
   .viewport, #small-sticks { grid-row: 2; grid-column: 1; }
   #small-sticks { align-self: end; padding-bottom: 9px; z-index: 1; }
   .actionbar { grid-row: 3; }
-  .training-strip { grid-row: 4; }
+  .training-controls { grid-row: 4; }
 }
 
 @media (any-pointer: coarse) and (min-width: 691px) and (min-height: 551px) {
