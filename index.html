@@ -156,10 +156,18 @@
 </dialog>
 <dialog id="settings-dialog">
   <div class="dialog-head"><h2>模擬設定</h2><button type="button" data-close>完成</button></div>
-  <details open><summary>飛行與畫面</summary><div class="form-grid" id="flight-settings"></div></details>
-  <details><summary>鍵盤按鍵</summary><div id="key-settings" class="form-grid"></div></details>
-  <details><summary>音效與畫質</summary><div class="form-grid" id="sound-settings"></div><button type="button" id="test-sound">試聽進球音效</button></details>
-  <details><summary>課程與教師設定</summary><div class="form-grid" id="teacher-settings"></div></details>
+  <nav class="settings-tabs" aria-label="設定分類">
+    <button type="button" data-settings="pilot" aria-controls="settings-pilot" aria-pressed="true">操控</button>
+    <button type="button" data-settings="media" aria-controls="settings-media" aria-pressed="false">畫面與音效</button>
+    <button type="button" data-settings="course" aria-controls="settings-course" aria-pressed="false">訓練</button>
+  </nav>
+  <section class="settings-panel" id="settings-pilot">
+    <div id="flight-settings"></div>
+    <div class="settings-device"><div><strong>遙控器與手把</strong><p>連接 ELRS 或遊戲手把後，校正四個軸的方向。</p></div><button type="button" data-dialog="controller-dialog">連接與校正</button></div>
+    <details><summary>自訂鍵盤按鍵</summary><div id="key-settings" class="form-grid"></div></details>
+  </section>
+  <section class="settings-panel" id="settings-media" hidden><div id="sound-settings" class="form-grid"></div><button type="button" id="test-sound">試聽進球音效</button></section>
+  <section class="settings-panel" id="settings-course" hidden><p>調整訓練的過關門檻與提示。</p><div id="teacher-settings" class="form-grid"></div></section>
 </dialog>
 <dialog id="controller-dialog" aria-labelledby="controller-title">
   <div class="dialog-head"><h2 id="controller-title">ELRS／遊戲手把</h2><button type="button" data-close>完成</button></div>
@@ -187,12 +195,20 @@
 </dialog>
 <dialog id="rules-dialog">
   <div class="dialog-head"><h2>第一次玩足球無人機</h2><button type="button" data-close>關閉</button></div>
-  <ol class="rule-steps">
-    <li><strong>等哨音再解鎖</strong><span>倒數結束後才起飛。提前解鎖可能讓對手獲得罰球。</span></li>
-    <li><strong>得分手從正面穿門</strong><span>朝對手底線飛，整顆護籠通過才計 1 分。防守隊員可攔截，但進門不計分。</span></li>
-    <li><strong>進球後，全隊先回半場</strong><span>得分隊仍在空中的隊員全部回到己方半場，才能再次得分。</span></li>
-    <li><strong>先贏兩局的隊伍獲勝</strong><span>標準每局 3 分鐘。練習賽可選 1 分鐘快打。模擬器平手採黃金進球。</span></li>
-  </ol>
+  <nav class="rules-chapters" id="rules-chapters" aria-label="教學章節"></nav>
+  <section class="rules-lesson" aria-labelledby="rules-demo-title">
+    <h3 id="rules-demo-title"></h3>
+    <p id="rules-demo-copy"></p>
+    <canvas id="rules-demo" width="640" height="228" aria-hidden="true"></canvas>
+    <p id="rules-demo-caption"></p>
+    <div class="rules-playback"><button type="button" id="rules-play">播放</button><input type="range" min="0" max="100" value="0" id="rules-timeline" aria-label="動畫進度"></div>
+  </section>
+  <section class="rules-quiz" aria-labelledby="rules-question">
+    <h3 id="rules-question"></h3>
+    <div class="button-row" id="rules-answers"></div>
+    <p id="rules-feedback" role="status"></p>
+    <button type="button" class="primary" id="rules-practice">開始實飛練習</button>
+  </section>
   <details><summary>防守、罰球與正式規則</summary>
   <p>在球門外攔截，避免穿越或停留在己方球門開口。罰球時由得分手對一名防守者，限時 10 秒，暫停本局計時。</p>
   <p>課程設定與正式賽事可能不同，正式比賽依裁判及賽事公告執行。<a href="https://www.fai.org/page/sporting-rules-0" target="_blank" rel="noopener">FAI 官方規則</a></p>

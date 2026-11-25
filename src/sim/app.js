@@ -8,6 +8,7 @@ import { metrics } from './trace.js';
 import { createView } from './view.js';
 import { makeLan } from './lan.js';
 import { makeReplay, saveTrace, savedTrace } from './replay.js';
+import { mountRulesLesson } from './rules-lesson.js';
 
 const controls = { ...structuredClone(controlDefaults), ...read('controls', {}) };
 const course = { ...courseDefaults, ...read('teacher', {}) };
@@ -635,29 +636,65 @@ function check(object, key, name, change) {
   wrap.prepend(control);
   return wrap;
 }
+const settingsTabs = [...document.querySelectorAll('[data-settings]')];
+for (const tab of settingsTabs) tab.onclick = () => {
+  for (const item of settingsTabs) {
+    const active = item === tab;
+    item.setAttribute('aria-pressed', String(active));
+    $(item.getAttribute('aria-controls')).hidden = !active;
+  }
+};
+
+function settingChoices(title, id, choices, selected, change) {
+  const row = make('fieldset', '', { class: 'setting-choice' });
+  row.append(make('legend', title));
+  const items = choices.map(([value, name, hint]) => {
+    const node = button(name, () => {
+      change(value);
+      for (const item of items) item.setAttribute('aria-pressed', String(item === node));
+    }, { ['data-' + id]: String(value), 'aria-pressed': String(value === selected) });
+    if (hint) node.append(make('small', hint));
+    return node;
+  });
+  row.append(...items);
+  return row;
+}
+
 labelTouchControls();
-$('flight-settings').replaceChildren(
-  optionMenu('雙搖桿操控', [[2,'美國手 Mode 2'], [1,'日本手 Mode 1']], controls.stickMode, value => {
-    input.clear();
-    input.cancelCalibration();
-    controls.stickMode = Number(value);
-    labelTouchControls();
-    saveControls();
-  }, 'stick-mode'),
-  range(controls, 'sensitivity', '靈敏度', .4, 1.8, .05, saveControls),
+const advancedFlight = make('details');
+const flightAdjustments = make('div', '', { class: 'form-grid' });
+flightAdjustments.append(
+  range(controls, 'sensitivity', '搖桿靈敏度', .4, 1.8, .05, saveControls),
   range(controls, 'tilt', '最大傾角 °', 15, 45, 1, saveControls),
   range(controls, 'thrust', '推力', .7, 1.4, .05, saveControls),
   range(controls, 'damping', '阻尼', .5, 1.7, .05, saveControls),
   range(controls, 'bounce', '碰撞反彈', .15, .65, .05, saveControls),
-  check(controls, 'stabilize', '初學者自穩', saveControls),
-  check(controls, 'shake', '碰撞鏡頭震動', saveControls),
+);
+advancedFlight.append(make('summary', '進階飛行調校'), flightAdjustments);
+$('flight-settings').replaceChildren(
+  settingChoices('雙搖桿配置', 'stick-mode', [
+    [2, '美國手 · Mode 2', '左手油門、右手俯仰'],
+    [1, '日本手 · Mode 1', '右手油門、左手俯仰'],
+  ], controls.stickMode, value => {
+    input.clear();
+    input.cancelCalibration();
+    controls.stickMode = value;
+    labelTouchControls();
+    saveControls();
+  }),
+  settingChoices('飛行輔助', 'flight-assist', [
+    [true, '初學自穩', '鬆桿後較快穩定'],
+    [false, '進階操控', '傾斜時需自行補油門'],
+  ], controls.stabilize, value => { controls.stabilize = value; saveControls(); }),
+  advancedFlight,
 );
 $('sound-settings').replaceChildren(
+  settingChoices('畫質', 'quality', [['low','省電'], ['medium','標準'], ['high','精細']],
+    controls.quality, value => { controls.quality = value; view?.quality(value); saveControls(); }),
+  check(controls, 'shake', '碰撞鏡頭震動', saveControls),
   range(controls, 'volume', '主音量', 0, 1, .05, saveControls),
   range(controls, 'effects', '音效音量', 0, 1, .05, saveControls),
   check(controls, 'muted', '靜音', saveControls),
-  optionMenu('畫質', [['low','低'], ['medium','中'], ['high','高']], controls.quality,
-    value => { controls.quality = value; view?.quality(value); saveControls(); }),
   optionMenu('進球音效', [['horn','競技號角'], ['electronic','電子脈衝'], ['cheer','校園歡呼']], controls.sound,
     value => { controls.sound = value; saveControls(); }),
 );
@@ -787,6 +824,12 @@ table($('rules-body'), [], [
   ['平手處理依賽事公告', '採黃金進球', '課程自訂'],
 ]);
 
+mountRulesLesson(level => {
+  selectedLevel = level;
+  store('level', level);
+  $('rules-dialog').close();
+  openMode('training');
+});
 matchOptions($('room-options'), true);
 savedTrace().then(trace => { if (!previousTrace) previousTrace = trace; }).catch(() => {});
 openMode('free');
@@ -801,6 +844,7 @@ function frame(now) {
   last = now;
   const anyDialog = Boolean(document.querySelector('dialog[open]'));
   const blocked = anyDialog || replay.active;
+  const viewingRules = $('rules-dialog').open;
   const values = input.poll(blocked);
   const partner = input.secondaryInput(blocked);
   if (mode === 'lan') lan.tick(now, values);
@@ -808,7 +852,7 @@ function frame(now) {
     lan.tick(now, null);
     accumulator += dt;
     while (accumulator >= STEP) {
-      tickGame(local, { [local.pilotId]: values, [secondPilotId]: partner }, STEP);
+      if (!viewingRules) tickGame(local, { [local.pilotId]: values, [secondPilotId]: partner }, STEP);
       accumulator -= STEP;
     }
     if (local.training && local.time - lastTrialSample >= .1) {

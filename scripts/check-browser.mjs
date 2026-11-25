@@ -103,7 +103,12 @@ try {
   await click('#records-dialog [data-close]');
   await click('#flight-dialog [data-close]');
   await click('[data-dialog=settings-dialog]');
-  await waitUntil("document.querySelector('#settings-dialog').open && document.querySelector('#flight-settings input')", 'Settings missing');
+  await waitUntil("document.querySelector('#settings-dialog').open && document.querySelector('[data-stick-mode]')", 'Pilot settings missing');
+  await click('[data-settings=media]');
+  assert.equal(await evaluate("!document.getElementById('settings-media').hidden"), true);
+  await click('[data-settings=course]');
+  assert.equal(await evaluate("!document.getElementById('settings-course').hidden"), true);
+  await click('[data-settings=pilot]');
   await click('#settings-dialog [data-close]');
   await click('[data-mode=match]');
   await waitUntil("document.querySelector('#match-start-dialog').open", 'Role picker did not open');
@@ -145,8 +150,22 @@ try {
   await click('#match-start-form button[type=submit]');
   await waitUntil("document.getElementById('shared-status').textContent.includes('紅隊')", 'Cooperation did not assign both players to red');
   await click('[data-dialog=rules-dialog]');
-  await waitUntil("document.querySelectorAll('#rules-dialog .rule-steps li').length === 4", 'Beginner rules are missing');
-  await click('#rules-dialog [data-close]');
+  await waitUntil("document.querySelectorAll('#rules-chapters button').length === 5", 'Rule chapters are missing');
+  await click('#rules-chapters button:nth-child(2)');
+  await click('#rules-play');
+  await waitUntil("Number(document.getElementById('rules-timeline').value) > 3", 'Rule animation did not advance');
+  await click('#rules-play');
+  const stopped = await evaluate("document.getElementById('rules-timeline').value");
+  await new Promise(resolve => setTimeout(resolve, 180));
+  assert.equal(await evaluate("document.getElementById('rules-timeline').value"), stopped);
+  await evaluate("const slider=document.getElementById('rules-timeline'); slider.value=92; slider.dispatchEvent(new Event('input'));");
+  await waitUntil("document.getElementById('rules-demo-caption').textContent.includes('＋1 分')", 'Goal demo missed its final state');
+  await click('#rules-answers button:first-child');
+  await waitUntil("document.getElementById('rules-feedback').dataset.correct === 'true'", 'Rule quiz did not grade');
+  await capture('rules');
+  await click('#rules-practice');
+  await waitUntil("!document.getElementById('rules-dialog').open && document.getElementById('level').value === '9'",
+    'Rule practice did not start the real flight drill');
   if (await evaluate("!document.querySelector('[data-dialog=lan-dialog]').hidden")) {
     await click('[data-dialog=lan-dialog]');
     await click('#lan-create');
@@ -184,7 +203,7 @@ try {
   await command('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
   await waitUntil("!document.querySelector('.stick[data-held]')", 'Touch inputs did not return to neutral');
   await click('[data-dialog=settings-dialog]');
-  await select('stick-mode', '1');
+  await click('[data-stick-mode="1"]');
   await click('#settings-dialog [data-close]');
   await click('#reset');
   await click('#arm');
@@ -202,7 +221,7 @@ try {
   await waitUntil("document.getElementById('left-float').hidden && document.getElementById('right-float').hidden",
     'Floating pads did not release');
   await click('[data-dialog=settings-dialog]');
-  await select('stick-mode', '2');
+  await click('[data-stick-mode="2"]');
   await click('#settings-dialog [data-close]');
   await capture('narrow');
   await touchLayout(844, 390);
@@ -239,7 +258,7 @@ try {
     "Number(document.getElementById('left-stick').style.getPropertyValue('--stick-y')) === 0",
   'Disconnect should clear the selected controller input');
   assert.deepEqual(errors, []);
-  console.log('Chrome: default rear chase, solo striker and defender selection, grounded training, same-device versus and co-op, quick rules, fixed and floating dual touch in Mode 1/2, ELRS calibration and disconnect, and goal replay; no rendering or runtime errors.');
+  console.log('Chrome: default rear chase, solo striker and defender selection, grounded training, same-device versus and co-op, animated rules, quiz and real practice, fixed and floating dual touch in Mode 1/2, ELRS calibration and disconnect, and goal replay; no rendering or runtime errors.');
 } finally {
   socket.close();
 }

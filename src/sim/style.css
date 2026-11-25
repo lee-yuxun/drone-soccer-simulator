@@ -212,10 +212,28 @@ td,th{padding:6px 8px;border-bottom:1px solid var(--line);text-align:left;vertic
 .shared-hud { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; padding: 8px 12px; border-top: 1px solid var(--line); font-size: .86rem; }
 .shared-hud span { margin-right: auto; color: #cfdaea; }
 .shared-hud button { padding: 5px 8px; }
-.rule-steps { display: grid; gap: 10px; padding-left: 1.5em; }
-.rule-steps li { padding: 9px 12px; border-radius: 8px; background: #1a2b3e; }
-.rule-steps li::marker { color: var(--accent); font-weight: 800; }
-.rule-steps span { display: block; color: var(--muted); }
+.settings-tabs, .rules-chapters { display: flex; flex-wrap: wrap; gap: 7px; margin: 12px 0; }
+.settings-tabs { border-bottom: 1px solid var(--line); padding-bottom: 11px; }
+.settings-panel { padding: 2px 0 4px; }
+.setting-choice { display: flex; flex-wrap: wrap; gap: 8px; margin: 0 0 14px; padding: 9px 10px 10px; }
+.setting-choice legend { color: #d9e4f4; font-size: .9rem; font-weight: 700; }
+.setting-choice button { flex: 1 1 auto; min-height: 45px; text-align: left; }
+.setting-choice small { display: block; color: var(--muted); font-size: .77rem; font-weight: 500; }
+.setting-choice button[aria-pressed=true] small { color: #d9e9bc; }
+#sound-settings .setting-choice { grid-column: 1 / -1; }
+.settings-device { display: flex; align-items: center; flex-wrap: wrap; justify-content: space-between; gap: 10px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 8px; }
+.settings-device p { margin: 3px 0; color: var(--muted); font-size: .85rem; }
+.rules-chapters button { flex: 1 1 auto; font-size: .84rem; }
+.rules-lesson, .rules-quiz { padding: 12px; border: 1px solid var(--line); border-radius: 10px; margin: 10px 0; background: #142133; }
+.rules-lesson h3, .rules-quiz h3 { margin: 0; font-size: 1.02rem; }
+.rules-lesson p, .rules-quiz p { margin: 5px 0 9px; color: var(--muted); }
+#rules-demo { display: block; width: 100%; border-radius: 6px; }
+#rules-demo-caption { color: var(--accent); padding-top: 4px; font-weight: 700; font-size: .9rem; }
+.rules-playback { display: flex; gap: 12px; align-items: center; }
+.rules-playback input { flex: 1; min-width: 0; }
+#rules-feedback[data-correct=true] { color: #d9efbc; }
+#rules-feedback[data-correct=false] { color: #ffc7a9; }
+#rules-feedback:empty { display: none; }
 
 .touch-hint { align-self: center; margin: 0 6px; color: var(--muted); font-size: .77rem; text-align: center; }
 .shared-hud small { flex-basis: 100%; color: var(--muted); }
