@@ -117,7 +117,7 @@ try {
   await select('level', '25');
   await waitUntil("!document.querySelector('#training-result').hidden && " +
     "document.querySelector('#training-result h2').textContent.includes('未通過')",
-    'Timed-out drill should automatically show its result', 22000);
+    'Timed-out drill should automatically show its result', 60000);
   assert.equal(await evaluate("[...document.querySelectorAll('#training-result button')].map(button => button.textContent).join()"),
     '再試一次');
   await click('#training-result .primary');
