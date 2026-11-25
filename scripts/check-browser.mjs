@@ -107,6 +107,7 @@ try {
   await click('#settings-dialog [data-close]');
   await click('[data-mode=match]');
   await waitUntil("document.querySelector('#match-start-dialog').open", 'Role picker did not open');
+  await click('#match-start-form input[value=solo]');
   await click('#match-start-form input[value=striker]');
   await click('#match-start-form button[type=submit]');
   await waitUntil("document.querySelector('#role-tag').textContent.includes('得分手')", 'Striker role did not start');
@@ -127,6 +128,25 @@ try {
   await capture('replay');
   await click('#replay-close');
   await waitUntil("document.querySelector('#camera').value === 'follow'", 'Rear follow view should resume after replay');
+  await click('[data-mode=match]');
+  await click('#match-start-form input[value=versus]');
+  await select('match-round', '60');
+  await click('#match-start-form button[type=submit]');
+  await waitUntil("document.getElementById('shared-status').textContent.includes('藍隊') && " +
+    "document.getElementById('camera').value === 'sideline'", 'Same-device versus did not start');
+  await waitUntil("document.getElementById('time-label').textContent.includes('SET 1')", 'Versus whistle did not fire');
+  await tap('KeyM', 'm', 77);
+  await key('KeyI', 'i', 73, 'keyDown');
+  await waitUntil("parseFloat(document.getElementById('shared-status').textContent.split('高度 ')[1]) > .65 && " +
+    "document.getElementById('altitude').textContent === '0.10'", 'Player 2 did not fly independently');
+  await key('KeyI', 'i', 73, 'keyUp');
+  await click('[data-mode=match]');
+  await click('#match-start-form input[value=coop]');
+  await click('#match-start-form button[type=submit]');
+  await waitUntil("document.getElementById('shared-status').textContent.includes('紅隊')", 'Cooperation did not assign both players to red');
+  await click('[data-dialog=rules-dialog]');
+  await waitUntil("document.querySelectorAll('#rules-dialog .rule-steps li').length === 4", 'Beginner rules are missing');
+  await click('#rules-dialog [data-close]');
   if (await evaluate("!document.querySelector('[data-dialog=lan-dialog]').hidden")) {
     await click('[data-dialog=lan-dialog]');
     await click('#lan-create');
@@ -163,6 +183,27 @@ try {
   'Two touch inputs should steer and lift simultaneously');
   await command('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
   await waitUntil("!document.querySelector('.stick[data-held]')", 'Touch inputs did not return to neutral');
+  await click('[data-dialog=settings-dialog]');
+  await select('stick-mode', '1');
+  await click('#settings-dialog [data-close]');
+  await click('#reset');
+  await click('#arm');
+  const stage = await evaluate("document.getElementById('stage').getBoundingClientRect().toJSON()");
+  const origins = [touch(stage, 13, .30, .47), touch(stage, 14, .72, .47)];
+  await command('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: origins });
+  await waitUntil("!document.getElementById('left-float').hidden && !document.getElementById('right-float').hidden",
+    'Floating pads did not appear at independent touch points');
+  await command('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [
+    { ...origins[0], x: origins[0].x + 24 }, { ...origins[1], y: origins[1].y - 40 },
+  ] });
+  await waitUntil("Number(document.getElementById('altitude').textContent) > .65",
+    'Mode 1 floating right stick did not control throttle');
+  await command('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+  await waitUntil("document.getElementById('left-float').hidden && document.getElementById('right-float').hidden",
+    'Floating pads did not release');
+  await click('[data-dialog=settings-dialog]');
+  await select('stick-mode', '2');
+  await click('#settings-dialog [data-close]');
   await capture('narrow');
   await touchLayout(844, 390);
   await capture('landscape');
@@ -174,7 +215,7 @@ try {
   await click('#reset');
 
   await evaluate(`
-    window.testPad = {id:'ELRS mock', index:0, mapping:'', connected:true, axes:[0,0,0,0,1,-1], buttons:[]};
+    window.testPad = {id:'ELRS mock ' + crypto.randomUUID(), index:0, mapping:'', connected:true, axes:[0,0,0,0,1,-1], buttons:[]};
     Object.defineProperty(navigator,'getGamepads', { configurable:true, value:()=>window.testPad?.connected ? [window.testPad] : [] });
   `);
   await click('#controller-button');
@@ -198,7 +239,7 @@ try {
     "Number(document.getElementById('left-stick').style.getPropertyValue('--stick-y')) === 0",
   'Disconnect should clear the selected controller input');
   assert.deepEqual(errors, []);
-  console.log('Chrome: default rear chase, solo striker and defender selection, grounded training, portrait/landscape/tablet dual touch, ELRS calibration and disconnect, and goal replay; no rendering or runtime errors.');
+  console.log('Chrome: default rear chase, solo striker and defender selection, grounded training, same-device versus and co-op, quick rules, fixed and floating dual touch in Mode 1/2, ELRS calibration and disconnect, and goal replay; no rendering or runtime errors.');
 } finally {
   socket.close();
 }

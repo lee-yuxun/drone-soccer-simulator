@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { neutral } from '../src/sim/flight.js';
-import { padValues, startPadCalibration, updatePadCalibration } from '../src/sim/gamepad.js';
+import { padInstruction, padValues, startPadCalibration, touchAxis, updatePadCalibration } from '../src/sim/gamepad.js';
 
 test('ELRS Mode 2 calibration detects nonstandard axis order, centers and direction', () => {
   const center = [.04, -.03, .08, -.07, 1, -1];
@@ -29,4 +29,13 @@ test('calibration detects non-centering throttle at its endpoint', () => {
   updatePadCalibration(calibration, [0, 0, .1, 0]);
   assert.match(calibration.error, /行程中間/);
   assert.equal(calibration.axes.length, 0);
+});
+
+test('Mode 1 moves throttle to the right stick without changing yaw or roll', () => {
+  assert.deepEqual(touchAxis('left', 2), { x: 'yaw', y: 'throttle' });
+  assert.deepEqual(touchAxis('right', 2), { x: 'roll', y: 'pitch' });
+  assert.deepEqual(touchAxis('left', 1), { x: 'yaw', y: 'pitch' });
+  assert.deepEqual(touchAxis('right', 1), { x: 'roll', y: 'throttle' });
+  assert.equal(padInstruction(1, 1), '右搖桿向上');
+  assert.equal(padInstruction(3, 1), '左搖桿向上');
 });

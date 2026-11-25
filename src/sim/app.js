@@ -1,8 +1,8 @@
 import { $, button, make, store, read, download, csv, makeAudio, makeInput, humanKey, labelKeys } from './browser.js';
-import { controlDefaults, courseDefaults, field, profiles, ROLE_NAMES, STEP, TEAM_NAMES } from './config.js';
+import { controlDefaults, courseDefaults, field, profiles, ROLE_NAMES, secondPilotId, STEP, TEAM_NAMES } from './config.js';
 import { gameCreate, doAction, tickGame } from './game.js';
 import { neutral } from './flight.js';
-import { padBindings, padValues } from './gamepad.js';
+import { padBindings, padInstruction, padValues, touchAxis } from './gamepad.js';
 import { levels, stageLabel } from './training.js';
 import { metrics } from './trace.js';
 import { createView } from './view.js';
@@ -11,10 +11,12 @@ import { makeReplay, saveTrace, savedTrace } from './replay.js';
 
 const controls = { ...structuredClone(controlDefaults), ...read('controls', {}) };
 const course = { ...courseDefaults, ...read('teacher', {}) };
-const options = { profileId: 'course-3v3', pilotRole: 'striker', setSeconds: 180, breakSeconds: 120, height: 3, difficulty: 'normal',
+const options = { profileId: 'course-3v3', pilotRole: 'striker', matchKind: 'solo', setSeconds: 180, breakSeconds: 120, height: 3, difficulty: 'normal',
   ...read('match-options', {}) };
 const cameras = ['sideline', 'follow', 'fpv', 'goal', 'top', 'orbit'];
 const initialCamera = 'follow';
+const matchNames = { solo: '單人練習賽', versus: '同機雙人對抗', coop: '同機雙人合作' };
+const touchNames = { yaw: '偏航', throttle: '油門', roll: '滾轉', pitch: '俯仰' };
 const ui = {};
 for (const id of ['red-score', 'blue-score', 'time-label', 'clock', 'role-tag', 'banner', 'altitude', 'speed',
   'collisions', 'event-toast', 'arm', 'reset', 'turtle', 'pause', 'stop', 'mode-title', 'mode-copy', 'flight-status',
@@ -100,6 +102,7 @@ const lan = makeLan(state => {
   remote = state;
   remoteId = state.id;
   if (first) {
+    input.shared(false);
     if (replay.active) replay.stop();
     mode = 'lan';
     remoteSummary = undefined;
@@ -156,7 +159,7 @@ function openMode(value) {
     height: options.height, setSeconds: options.setSeconds, breakSeconds: options.breakSeconds,
   };
   local = gameCreate({ mode, level: selectedLevel, profileId: mode === 'match' ? options.profileId : 'course-3v3',
-    pilotRole: options.pilotRole, controls, course, settings, difficulty: options.difficulty,
+    pilotRole: options.pilotRole, matchKind: options.matchKind, controls, course, settings, difficulty: options.difficulty,
   });
   timing = {};
   accumulator = 0;
@@ -166,14 +169,16 @@ function openMode(value) {
   eventScope = '';
   trainingPath = [];
   lastTrialSample = -1;
-  input.clear();
+  input.shared(isShared());
   syncTabs();
-  changeCamera(local.practice?.camera ?? initialCamera);
+  changeCamera(isShared() ? 'sideline' : local.practice?.camera ?? initialCamera);
   renderMode();
   updateHud(performance.now());
 }
 
-function action(name) {
+function isShared() { return mode === 'match' && local?.matchKind !== 'solo'; }
+
+function action(name, player = 1) {
   audio.enable();
   if (name === 'camera') {
     changeCamera(cameras[(cameras.indexOf(camera) + 1) % cameras.length]);
@@ -190,7 +195,7 @@ function action(name) {
   }
   if (replay.active) return;
   if (mode === 'lan') lan.act(name);
-  else doAction(local, local.pilotId, name);
+  else doAction(local, player === 2 ? secondPilotId : local.pilotId, name);
 }
 
 function setText(node, value) {
@@ -284,10 +289,20 @@ function updateHud(now) {
   setText(ui.speed, Math.hypot(...Object.values(player?.v ?? { x: 0, y: 0, z: 0 })).toFixed(2));
   setText(ui.collisions, player?.collisions ?? 0);
   const values = player?.input ?? neutral();
-  ui['left-stick'].style.setProperty('--stick-x', values.yaw);
-  ui['left-stick'].style.setProperty('--stick-y', -values.throttle);
-  ui['right-stick'].style.setProperty('--stick-x', values.roll);
-  ui['right-stick'].style.setProperty('--stick-y', -values.pitch);
+  for (const side of ['left', 'right']) {
+    const axes = touchAxis(side, controls.stickMode);
+    ui[side + '-stick'].style.setProperty('--stick-x', values[axes.x]);
+    ui[side + '-stick'].style.setProperty('--stick-y', -values[axes.y]);
+  }
+  const partner = isShared() ? state.drones.find(drone => drone.id === secondPilotId) : null;
+  $('shared-hud').hidden = !partner;
+  if (partner) {
+    setText($('shared-status'), '玩家 2 · ' + TEAM_NAMES[partner.team] + ' ' + ROLE_NAMES[partner.role] +
+      ' · 高度 ' + partner.p.y.toFixed(2) + ' m');
+    setText($('arm-p2'), partner.armed ? '玩家 2 上鎖（M）' : '玩家 2 解鎖（M）');
+    $('arm-p2').disabled = !partner.active || partner.flipped || partner.recovering || state.phase === 'finished';
+    $('stop-p2').disabled = !partner.active || !partner.armed;
+  }
   setText(ui.pitch, deg(player?.pitch ?? 0));
   setText(ui.roll, deg(player?.roll ?? 0));
   setText(ui.heading, Math.round((((player?.yaw ?? 0) * 180 / Math.PI) % 360 + 360) % 360) % 360 + '°');
@@ -348,8 +363,8 @@ function matchOptions(target, includeSize = false) {
       options.profileId, value => { options.profileId = value; saveOptions(); }),
     optionMenu('AI 難度', [['easy','簡單'], ['normal','中等'], ['hard','困難']],
       options.difficulty, value => { options.difficulty = value; saveOptions(); }),
-    optionMenu('每局時間', [[120,'2 分鐘'], [180,'3 分鐘'], [240,'4 分鐘'], [300,'5 分鐘']],
-      options.setSeconds, value => { options.setSeconds = Number(value); saveOptions(); }),
+    optionMenu('每局時間', [...(includeSize ? [] : [[60,'1 分鐘快打']]), [120,'2 分鐘'], [180,'3 分鐘'], [240,'4 分鐘'], [300,'5 分鐘']],
+      includeSize && options.setSeconds === 60 ? 180 : options.setSeconds, value => { options.setSeconds = Number(value); saveOptions(); }),
     optionMenu('局間休息', [[120,'2 分鐘'], [150,'2 分半'], [180,'3 分鐘'], [240,'4 分鐘'], [300,'5 分鐘']],
       options.breakSeconds, value => { options.breakSeconds = Number(value); saveOptions(); }),
     optionMenu('場地高度', [[3,'3 m'], [4,'4 m · 課程擴充']], options.height,
@@ -380,9 +395,9 @@ function renderMode() {
     if (training.level.stages[0]?.type === 'check') strip.append(button('起飛前巡檢', () => openDialog('safety-dialog')));
   } else if (mode === 'match' || mode === 'lan') {
     const state = stateNow();
-    setText(ui['mode-title'], mode === 'lan' ? '區網比賽' : '單機練習賽');
+    setText(ui['mode-title'], mode === 'lan' ? '區網比賽' : matchNames[local.matchKind]);
     setText(ui['mode-copy'], (profiles[state.profileId]?.name ?? '') + ' · 先贏兩局。' +
-      (mode === 'match' ? ' AI 訓練輔助。' : ' 由房主伺服器同步。'));
+      (mode === 'match' ? isShared() ? ' 玩家 2 使用 I／K 升降、J／L 偏航、U／O 前後、Y／P 左右，M 解鎖。' : ' AI 訓練輔助。' : ' 由房主伺服器同步。'));
     timing.sets = make('p');
     timing.penalties = make('p');
     timing.analysis = button('檢視進球軌跡', () => openDialog('replay-dialog'));
@@ -423,6 +438,17 @@ function saveResult(training) {
   $('training-strip').append(pane);
 }
 
+function labelTouchControls() {
+  for (const side of ['left', 'right']) {
+    const axes = touchAxis(side, controls.stickMode);
+    const label = touchNames[axes.y] + ' · ' + touchNames[axes.x];
+    setText($(side + '-controls-label'), label);
+    $(side + '-pocket').setAttribute('aria-label', label);
+  }
+  setText($('virtual-controls'), '雙搖桿 · Mode ' + controls.stickMode);
+  setText($('pad-calibrate'), '開始 Mode ' + controls.stickMode + ' 校正');
+}
+
 function saveControls() {
   store('controls', controls);
   if (local) Object.assign(local.controls, controls);
@@ -454,8 +480,13 @@ function openDialog(id) {
   const popup = $(id);
   if (id === 'pause-dialog' && mode !== 'lan') local.paused = true;
   if (id === 'match-start-dialog' && !popup.open) {
-    const role = options.pilotRole === 'defender' ? 'defender' : 'striker';
-    $('match-start-form').elements.namedItem('pilot-role').value = role;
+    const form = $('match-start-form');
+    form.elements.namedItem('pilot-role').value = options.pilotRole === 'defender' ? 'defender' : 'striker';
+    form.elements.namedItem('match-kind').value = Object.hasOwn(matchNames, options.matchKind) ? options.matchKind : 'solo';
+    const round = form.elements.namedItem('round-seconds');
+    round.disabled = options.profileId === 'fai-f9ab-2026';
+    round.value = round.disabled ? '180' : String(options.setSeconds);
+    updateMatchHelp();
   }
   if (id === 'settings-dialog') input.keyButtons($('key-settings'));
   if (id === 'controller-dialog' && !popup.open) {
@@ -483,9 +514,16 @@ document.addEventListener('click', event => {
   if (dialog) openDialog(dialog);
   if (node.hasAttribute('data-close')) node.closest('dialog')?.close();
 });
+function updateMatchHelp() {
+  $('shared-help').hidden = $('match-start-form').elements.namedItem('match-kind').value === 'solo';
+}
+$('match-start-form').onchange = updateMatchHelp;
 $('match-start-form').onsubmit = event => {
   event.preventDefault();
-  options.pilotRole = new FormData(event.currentTarget).get('pilot-role');
+  const data = new FormData(event.currentTarget);
+  options.pilotRole = data.get('pilot-role');
+  options.matchKind = data.get('match-kind');
+  options.setSeconds = Number(data.get('round-seconds') ?? 180);
   saveOptions();
   $('match-start-dialog').close();
   $('flight-dialog').close();
@@ -497,6 +535,8 @@ $('controller-dialog').addEventListener('close', () => input.cancel());
 for (const id of ['arm', 'reset', 'turtle', 'stop', 'pause']) $(id).onclick = () => { action(id); $(id).blur(); };
 $('restart-run').onclick = () => { $('pause-dialog').close(); openMode(mode); };
 $('return-free').onclick = () => { $('pause-dialog').close(); openMode('free'); };
+$('arm-p2').onclick = () => action('arm', 2);
+$('stop-p2').onclick = () => action('stop', 2);
 $('test-sound').onclick = () => { audio.enable(); audio.sound('goal'); };
 $('student').value = read('student', 'PILOT');
 $('student').onchange = () => store('student', $('student').value);
@@ -595,7 +635,15 @@ function check(object, key, name, change) {
   wrap.prepend(control);
   return wrap;
 }
+labelTouchControls();
 $('flight-settings').replaceChildren(
+  optionMenu('雙搖桿操控', [[2,'美國手 Mode 2'], [1,'日本手 Mode 1']], controls.stickMode, value => {
+    input.clear();
+    input.cancelCalibration();
+    controls.stickMode = Number(value);
+    labelTouchControls();
+    saveControls();
+  }, 'stick-mode'),
   range(controls, 'sensitivity', '靈敏度', .4, 1.8, .05, saveControls),
   range(controls, 'tilt', '最大傾角 °', 15, 45, 1, saveControls),
   range(controls, 'thrust', '推力', .7, 1.4, .05, saveControls),
@@ -659,7 +707,7 @@ function updateControllerPanel() {
   if (calibration) {
     const state = calibration.error || (calibration.done ? '四軸校正完成。移動搖桿可查看即時輸入。' :
       calibration.returning ? '把搖桿放回中央。' : (calibration.axes.length + 1) + '／4　' +
-        padBindings[calibration.axes.length].instruction + '，其他搖桿保持置中。');
+        padInstruction(calibration.axes.length, controls.stickMode) + '，其他搖桿保持置中。');
     if (calibrationState !== state) {
       calibrationState = state;
       setText($('pad-detect'), state);
@@ -733,7 +781,7 @@ table($('rules-body'), [], [
   ['每隊 3–5 人，雙方人數相同。系列賽另見賽事公告', '3v3 或 5v5，空位由 AI 補上', '主辦單位可設定／課程 AI'],
   ['僅 Striker 可得分；整顆無人機向對手底線穿越', '檢查隊伍、角色、方向與完整穿越', '符合'],
   ['得分隊所有仍飛行的隊員回半場後才能再次進攻', '返回己方半場前鎖定得分資格', '符合'],
-  ['三個 Set，各 3 分鐘；先贏兩局，局間通常 2–3 分鐘', '手動練習採 3 分鐘／休息 2 分鐘；課程可調整', '符合／課程自訂'],
+  ['三個 Set，各 3 分鐘；先贏兩局，局間通常 2–3 分鐘', '手動練習採 3 分鐘／休息 2 分鐘；本機可選 1 分鐘快打', '符合／課程自訂'],
   ['提前起飛、非法守門等由裁判處置；罰球 10 秒暫停 Set 時鐘', '簡化判罰流程，得分手對一名防守者', '規則練習'],
   ['允許飛手主動翻正；正式比賽限制自動定位與航線修正', 'T 可翻正，手動設定停用玩家飛行輔助', 'AI 僅供模擬練習'],
   ['平手處理依賽事公告', '採黃金進球', '課程自訂'],
@@ -752,13 +800,15 @@ function frame(now) {
   const dt = Math.min(.1, Math.max(0, (now - last) / 1000));
   last = now;
   const anyDialog = Boolean(document.querySelector('dialog[open]'));
-  const values = input.poll(anyDialog || replay.active);
+  const blocked = anyDialog || replay.active;
+  const values = input.poll(blocked);
+  const partner = input.secondaryInput(blocked);
   if (mode === 'lan') lan.tick(now, values);
   else {
     lan.tick(now, null);
     accumulator += dt;
     while (accumulator >= STEP) {
-      tickGame(local, { [local.pilotId]: values }, STEP);
+      tickGame(local, { [local.pilotId]: values, [secondPilotId]: partner }, STEP);
       accumulator -= STEP;
     }
     if (local.training && local.time - lastTrialSample >= .1) {

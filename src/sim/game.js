@@ -1,4 +1,4 @@
-import { controlDefaults, courseDefaults, field, profiles, radius, rolesFor, standardGoals, STEP } from './config.js';
+import { controlDefaults, courseDefaults, field, profiles, radius, rolesFor, secondPilotId, standardGoals, STEP } from './config.js';
 import { autopilot, boundDrone, clamp, collideDrones, collideGoal, distance, droneAt, neutral, point,
   goalCoordinate, stepDrone, turtle } from './flight.js';
 import { evaluateTraining, levels, newTraining } from './training.js';
@@ -27,6 +27,7 @@ export function gameCreate(options = {}) {
   const game = {
     id: randomId(), options, mode, pilotId, profileId, teamSize, difficulty, match, practice,
     pilotRole: pilotRole === 'defender' ? 'defender' : 'striker',
+    matchKind: ['versus', 'coop'].includes(options.matchKind) ? options.matchKind : 'solo',
     field: practice?.field ?? { ...field, height: settings?.height === 4 && !profile.manual ? 4 : field.height },
     goals: practice?.goals ?? standardGoals(field.length),
     controls: { ...controlDefaults, ...controls }, manual: match && profile.manual,
@@ -52,6 +53,11 @@ export function gameCreate(options = {}) {
 function createRoster(game, roster) {
   if (game.match) {
     const localRoster = game.mode === 'match' ? [{ id: game.pilotId, team: 0, role: game.pilotRole }] : roster;
+    if (game.mode === 'match' && game.matchKind !== 'solo') {
+      const versus = game.matchKind === 'versus';
+      localRoster.push({ id: secondPilotId, team: versus ? 1 : 0,
+        role: versus || game.pilotRole === 'defender' ? 'striker' : 'defender' });
+    }
     return [0, 1].flatMap(team => rolesFor(game.teamSize).map((role, slot) => {
       const player = localRoster.find(seat => seat.team === team && seat.role === role);
       const sign = homeSide(team);

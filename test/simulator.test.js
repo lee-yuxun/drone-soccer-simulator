@@ -273,3 +273,23 @@ test('a solo defender is controllable and keeps the role when the next set start
   assert.equal(game.drones.find(drone => drone.id === 'pilot').role, 'defender');
   assert.equal(game.drones.find(drone => drone.team === 0 && drone.role === 'striker').ai, true);
 });
+
+test('shared matches give player 2 independent controls and a valid role', () => {
+  for (const matchKind of ['versus', 'coop']) {
+    const game = gameCreate({ mode: 'match', matchKind, pilotRole: 'defender', settings: { setSeconds: 60 } });
+    const red = game.drones.find(drone => drone.id === 'pilot');
+    const partner = game.drones.find(drone => drone.id === 'pilot-2');
+    assert.equal(red.role, 'defender');
+    assert.equal(partner.role, 'striker');
+    assert.equal(partner.team, matchKind === 'versus' ? 1 : 0);
+    assert.equal(partner.ai, false);
+    assert.equal(game.drones.filter(drone => drone.team === partner.team && drone.role === 'striker').length, 1);
+    for (const drone of game.drones) drone.ai = false;
+    run(game, 3.02);
+    doAction(game, 'pilot-2', 'arm');
+    run(game, .7, { 'pilot-2': { ...neutral(), throttle: 1 } });
+    assert.ok(partner.p.y > .65);
+    assert.equal(red.p.y, .1);
+    assert.ok(game.remaining < 60);
+  }
+});

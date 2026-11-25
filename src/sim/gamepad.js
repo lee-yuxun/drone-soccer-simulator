@@ -7,6 +7,17 @@ export const padBindings = [
   { key: 'pitch', name: '俯仰', instruction: '右搖桿向上', sign: -1 },
 ];
 
+export function padInstruction(slot, mode) {
+  if (mode === 1 && slot === 1) return '右搖桿向上';
+  if (mode === 1 && slot === 3) return '左搖桿向上';
+  return padBindings[slot].instruction;
+}
+
+export function touchAxis(side, mode) {
+  return side === 'left' ? { x: 'yaw', y: mode === 1 ? 'pitch' : 'throttle' } :
+    { x: 'roll', y: mode === 1 ? 'throttle' : 'pitch' };
+}
+
 export function padValues(profile, axes) {
   const input = neutral();
   if (!profile) return input;

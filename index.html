@@ -18,11 +18,11 @@
   <nav class="modes" aria-label="模式">
     <button type="button" data-mode="free" aria-pressed="true">自由飛行</button>
     <button type="button" data-mode="training" aria-pressed="false">30 級訓練</button>
-    <button type="button" data-mode="match" aria-pressed="false">單機比賽</button>
+    <button type="button" data-mode="match" aria-pressed="false">對戰</button>
     <button type="button" data-dialog="lan-dialog" data-mode-entry="lan">區網房間</button>
   </nav>
   <div class="utilities">
-    <button type="button" data-dialog="rules-dialog">規則</button>
+    <button type="button" data-dialog="rules-dialog">規則教學</button>
     <button type="button" data-dialog="settings-dialog">設定</button>
   </div>
 </header>
@@ -35,6 +35,8 @@
     </header>
     <div class="viewport">
       <div id="stage"></div>
+      <div class="float-stick stick" id="left-float" aria-hidden="true" hidden><i></i></div>
+      <div class="float-stick stick" id="right-float" aria-hidden="true" hidden><i></i></div>
       <div class="lensbar">
         <label for="camera">視角</label>
         <select id="camera" aria-label="飛行視角">
@@ -55,11 +57,12 @@
     <div id="small-sticks" hidden aria-label="觸控飛行雙搖桿">
       <div class="stick-control">
         <div class="stick" id="left-pocket" aria-label="左搖桿，油門與偏航"><i id="left-stick"></i></div>
-        <span>油門 · 偏航</span>
+        <span id="left-controls-label">油門 · 偏航</span>
       </div>
+      <p class="touch-hint">按住球場左右半邊拖曳<br>放手回中</p>
       <div class="stick-control">
         <div class="stick" id="right-pocket" aria-label="右搖桿，俯仰與滾轉"><i id="right-stick"></i></div>
-        <span>俯仰 · 滾轉</span>
+        <span id="right-controls-label">俯仰 · 滾轉</span>
       </div>
     </div>
     <div class="actionbar">
@@ -74,6 +77,12 @@
         <button type="button" data-dialog="flight-dialog">飛行資訊</button>
         <button type="button" data-dialog="replay-dialog">進球軌跡</button>
       </div>
+    </div>
+    <div class="shared-hud" id="shared-hud" hidden>
+      <span id="shared-status"></span>
+      <button type="button" id="arm-p2">玩家 2 解鎖（M）</button>
+      <button type="button" id="stop-p2">玩家 2 停槳（N）</button>
+      <small>I／K 升降 · J／L 轉向 · U／O 前後 · Y／P 左右</small>
     </div>
     <div id="training-strip" class="training-strip" hidden></div>
   </section>
@@ -93,10 +102,18 @@
 </main>
 
 <dialog id="match-start-dialog" aria-labelledby="match-start-title">
-  <div class="dialog-head"><h2 id="match-start-title">單機比賽</h2><button type="button" data-close>取消</button></div>
+  <div class="dialog-head"><h2 id="match-start-title">選擇對戰方式</h2><button type="button" data-close>取消</button></div>
   <form id="match-start-form">
     <fieldset class="match-roles">
-      <legend>選擇紅隊角色</legend>
+      <legend>玩法</legend>
+      <label><input type="radio" name="match-kind" value="solo" checked><span><strong>單人練習賽</strong><small>你和 AI 隊友一起對抗藍隊。</small></span></label>
+      <label><input type="radio" name="match-kind" value="versus"><span><strong>同機雙人對抗</strong><small>玩家 1 和玩家 2 分屬兩隊，AI 補上空位。</small></span></label>
+      <label><input type="radio" name="match-kind" value="coop"><span><strong>同機雙人合作</strong><small>兩人各操控一台紅隊無人機，一起對抗 AI。</small></span></label>
+    </fieldset>
+    <p id="shared-help" hidden>同機雙人共用畫面。可用一把鍵盤，或讓玩家 2 使用第二支已校正的手把。</p>
+    <label class="match-duration">每局時間 <select name="round-seconds" id="match-round"><option value="60">1 分鐘快打</option><option value="120">2 分鐘</option><option value="180" selected>3 分鐘</option><option value="240">4 分鐘</option><option value="300">5 分鐘</option></select></label>
+    <fieldset class="match-roles">
+      <legend>玩家 1 的紅隊角色</legend>
       <label>
         <input type="radio" name="pilot-role" value="striker" checked>
         <span><strong>得分手</strong><small>操控紅隊唯一能穿門得分的無人機。</small></span>
@@ -134,7 +151,7 @@
 <dialog id="controls-dialog">
   <div class="dialog-head"><h2>操作說明</h2><button type="button" data-close>關閉</button></div>
   <table><thead><tr><th>操作</th><th>按鍵</th></tr></thead><tbody id="quick-keys"></tbody></table>
-  <p>也可用滑鼠或觸控拖曳面板上的雙搖桿。先解鎖馬達，再升高到門心。保持同一高度，從中場朝底線飛，整顆護籠穿過圓門才得分。</p>
+  <p>手機和平板可在球場左、右半邊各按住並拖曳，放手就回中。也可直接拖曳下方的固定搖桿。先解鎖馬達，再升高到門心。保持同一高度，從中場朝底線飛，整顆護籠穿過圓門才得分。</p>
   <p>進階手動模式的傾斜會減少垂直推力，轉向或平移時可補油門。</p>
 </dialog>
 <dialog id="settings-dialog">
@@ -169,10 +186,18 @@
   </details>
 </dialog>
 <dialog id="rules-dialog">
-  <div class="dialog-head"><h2>FAI 規則對照</h2><button type="button" data-close>關閉</button></div>
-  <p>FAI Sporting Code Volume F9 2026 第 2 版 · 2026 年 6 月 1 日生效 · 模擬規則 0.1</p>
-  <p><a href="https://www.fai.org/page/sporting-rules-0" target="_blank" rel="noopener">FAI 官方規則來源</a></p>
+  <div class="dialog-head"><h2>第一次玩足球無人機</h2><button type="button" data-close>關閉</button></div>
+  <ol class="rule-steps">
+    <li><strong>等哨音再解鎖</strong><span>倒數結束後才起飛。提前解鎖可能讓對手獲得罰球。</span></li>
+    <li><strong>得分手從正面穿門</strong><span>朝對手底線飛，整顆護籠通過才計 1 分。防守隊員可攔截，但進門不計分。</span></li>
+    <li><strong>進球後，全隊先回半場</strong><span>得分隊仍在空中的隊員全部回到己方半場，才能再次得分。</span></li>
+    <li><strong>先贏兩局的隊伍獲勝</strong><span>標準每局 3 分鐘。練習賽可選 1 分鐘快打。模擬器平手採黃金進球。</span></li>
+  </ol>
+  <details><summary>防守、罰球與正式規則</summary>
+  <p>在球門外攔截，避免穿越或停留在己方球門開口。罰球時由得分手對一名防守者，限時 10 秒，暫停本局計時。</p>
+  <p>課程設定與正式賽事可能不同，正式比賽依裁判及賽事公告執行。<a href="https://www.fai.org/page/sporting-rules-0" target="_blank" rel="noopener">FAI 官方規則</a></p>
   <table><thead><tr><th>FAI 規則</th><th>模擬器設定</th><th>性質</th></tr></thead><tbody id="rules-body"></tbody></table>
+  </details>
 </dialog>
 <dialog id="safety-dialog">
   <div class="dialog-head"><h2>飛行安全</h2><button type="button" data-close>關閉</button></div>

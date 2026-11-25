@@ -1,5 +1,6 @@
 import { clamp, neutral } from './flight.js';
-import { padValues, startPadCalibration, updatePadCalibration } from './gamepad.js';
+import { firstPilotKeys, secondPilotActions, secondPilotKeys } from './config.js';
+import { padValues, startPadCalibration, touchAxis, updatePadCalibration } from './gamepad.js';
 
 export const $ = id => document.getElementById(id);
 export function make(tag, text = '', attrs = {}) {
@@ -43,24 +44,32 @@ export function makeInput(settings, action, save) {
   let preferredPad;
   let previousButtons = [];
   let labels = null;
+  let shared = false;
+  let otherDevice;
+  let otherButtons = [];
   const virtual = neutral();
   const profiles = settings.padProfiles ??= {};
   const legacyMapping = settings.axes.join(',') !== '0,1,2,3' || settings.reverse.some(Boolean) ||
     settings.centers.some(center => center !== 0);
   const deviceKey = pad => pad.index + ':' + pad.id;
-  const profileKey = pad => 'device:' + pad.id;
+  const profileKey = pad => 'device:' + pad.id + (settings.stickMode === 1 ? ':mode1' : '');
   const legacyProfile = () => Object.fromEntries(['axes', 'centers', 'reverse', 'deadzone'].map(key =>
     [key, Array.isArray(settings[key]) ? [...settings[key]] : settings[key]]));
   const savedProfile = () => currentPad ? profiles[profileKey(currentPad)] : undefined;
-  const activeProfile = () => {
-    if (!currentPad) return;
-    const profile = savedProfile() ?? (currentPad.mapping === 'standard' || legacyMapping ? settings : undefined);
+  function profileFor(pad) {
+    if (!pad) return;
+    let profile = profiles[profileKey(pad)];
+    if (!profile && (pad.mapping === 'standard' || pad === currentPad && legacyMapping && settings.stickMode !== 1)) {
+      profile = settings.stickMode === 1 ? { ...settings, axes: [0, 3, 2, 1], centers: [0, 0, 0, 0],
+        reverse: [false, false, false, false] } : settings;
+    }
     if (profile && profile.axes.length === 4 && new Set(profile.axes).size === 4 &&
-        profile.axes.every(axis => Number.isInteger(axis) && axis >= 0 && axis < currentPad.axes.length)) return profile;
-  };
+        profile.axes.every(axis => Number.isInteger(axis) && axis >= 0 && axis < pad.axes.length)) return profile;
+  }
+  const activeProfile = () => profileFor(currentPad);
   function editProfile() {
-    const profile = savedProfile() ?? legacyProfile();
-    return { ...profile, axes: [...profile.axes], centers: [...profile.centers], reverse: [...profile.reverse] };
+    const profile = activeProfile() ?? savedProfile() ?? legacyProfile();
+    return { axes: [...profile.axes], centers: [...profile.centers], reverse: [...profile.reverse], deadzone: profile.deadzone };
   }
   function saveProfile(profile) {
     if (!currentPad) return false;
@@ -68,41 +77,67 @@ export function makeInput(settings, action, save) {
     save();
     return true;
   }
-  function bindStick(element, horizontal, vertical) {
+  function bindStick(side) {
+    const fixed = $(side + '-pocket');
+    const floating = $(side + '-float');
+    const stage = $('stage');
     let pointer;
+    let surface;
+    let origin;
     const shift = event => {
       if (event.pointerId !== pointer) return;
-      const bounds = element.getBoundingClientRect();
-      const travel = bounds.width * .32;
-      virtual[horizontal] = clamp((event.clientX - bounds.left - bounds.width / 2) / travel, -1, 1);
-      virtual[vertical] = clamp((bounds.top + bounds.height / 2 - event.clientY) / travel, -1, 1);
+      const { x, y } = touchAxis(side, settings.stickMode);
+      const dx = (event.clientX - origin.x) / origin.travel;
+      const dy = (origin.y - event.clientY) / origin.travel;
+      const radius = Math.max(1, Math.hypot(dx, dy));
+      virtual[x] = dx / radius;
+      virtual[y] = dy / radius;
+      floating.style.setProperty('--stick-x', virtual[x]);
+      floating.style.setProperty('--stick-y', -virtual[y]);
     };
     const reset = () => {
       const released = pointer;
       pointer = undefined;
-      virtual[horizontal] = 0;
-      virtual[vertical] = 0;
-      element.removeAttribute('data-held');
-      if (released != null && element.hasPointerCapture(released)) element.releasePointerCapture(released);
+      const { x, y } = touchAxis(side, settings.stickMode);
+      virtual[x] = virtual[y] = 0;
+      fixed.removeAttribute('data-held');
+      floating.hidden = true;
+      if (released != null && surface.hasPointerCapture(released)) surface.releasePointerCapture(released);
+      surface = undefined;
     };
     const release = event => { if (event.pointerId === pointer) reset(); };
-    element.addEventListener('pointerdown', event => {
-      if (pointer != null || event.button !== 0) return;
+    function start(event, isFloating) {
+      if (pointer != null || event.button !== 0 || $('small-sticks').hidden) return;
+      if (isFloating) {
+        if (event.pointerType !== 'touch' || $('camera').value === 'orbit') return;
+        const rect = stage.getBoundingClientRect();
+        const left = event.clientX < rect.left + rect.width / 2;
+        if (left !== (side === 'left')) return;
+        floating.style.left = event.clientX - rect.left + 'px';
+        floating.style.top = event.clientY - rect.top + 'px';
+        origin = { x: event.clientX, y: event.clientY, travel: 46 };
+        floating.hidden = false;
+      } else {
+        const rect = fixed.getBoundingClientRect();
+        origin = { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2, travel: rect.width * .34 };
+      }
       event.preventDefault();
       pointer = event.pointerId;
-      element.setPointerCapture(pointer);
-      element.setAttribute('data-held', '');
+      surface = event.currentTarget;
+      surface.setPointerCapture(pointer);
+      fixed.setAttribute('data-held', '');
       shift(event);
-    });
-    element.addEventListener('pointermove', shift);
-    element.addEventListener('pointerup', release);
-    element.addEventListener('pointercancel', release);
-    element.addEventListener('lostpointercapture', release);
+    }
+    for (const [target, floatingInput] of [[fixed, false], [stage, true]]) {
+      target.addEventListener('pointerdown', event => start(event, floatingInput));
+      target.addEventListener('pointermove', shift);
+      for (const type of ['pointerup', 'pointercancel', 'lostpointercapture']) target.addEventListener(type, release);
+    }
     return reset;
   }
-  const resetLeft = bindStick($('left-pocket'), 'yaw', 'throttle');
-  const resetRight = bindStick($('right-pocket'), 'roll', 'pitch');
-  const clearVirtual = () => { resetLeft(); resetRight(); };
+  const resetLeft = bindStick('left');
+  const resetRight = bindStick('right');
+  const clearVirtual = () => { resetLeft(); resetRight(); Object.assign(virtual, neutral()); };
   const shortcuts = { Space: 'arm', KeyT: 'turtle', KeyZ: 'reset', Escape: 'pause', KeyC: 'camera', KeyX: 'stop' };
   const formFocused = event => /INPUT|SELECT|TEXTAREA/.test(event.target.tagName) || event.target.isContentEditable;
   const clear = () => { held.clear(); clearVirtual(); };
@@ -127,16 +162,18 @@ export function makeInput(settings, action, save) {
     if (document.querySelector('dialog[open]') || formFocused(event) ||
         (event.code === 'Space' && event.target.tagName === 'BUTTON')) return;
     const shortcut = shortcuts[event.code];
-    if (!shortcut && !settings.keys.includes(event.code)) return;
+    const secondary = shared && secondPilotActions[event.code];
+    const keys = shared ? firstPilotKeys : settings.keys;
+    if (!shortcut && !secondary && !keys.includes(event.code) && !(shared && secondPilotKeys.includes(event.code))) return;
     event.preventDefault();
-    if (shortcut) {
-      if (!event.repeat) action(shortcut);
+    if (shortcut || secondary) {
+      if (!event.repeat) action(shortcut || secondary, secondary ? 2 : 1);
       return;
     }
     held.add(event.code);
   });
-  function keyboard() {
-    const active = index => Number(held.has(settings.keys[index]));
+  function keyboard(keys = shared ? firstPilotKeys : settings.keys) {
+    const active = index => Number(held.has(keys[index]));
     return { throttle: active(0) - active(1), yaw: active(3) - active(2),
       pitch: active(4) - active(5), roll: active(7) - active(6) };
   }
@@ -182,7 +219,7 @@ export function makeInput(settings, action, save) {
       const deltas = currentPad.axes.map((value, index) => Math.abs(value - baseline[index]));
       const candidate = deltas.indexOf(Math.max(...deltas));
       if (candidate >= 0 && deltas[candidate] > .5) {
-        const profile = savedProfile() ?? legacyProfile();
+        const profile = editProfile();
         profile.axes[axis] = candidate;
         profile.centers[axis] = 0;
         detecting = undefined;
@@ -202,8 +239,27 @@ export function makeInput(settings, action, save) {
     const physical = padValues(activeProfile(), currentPad?.axes ?? []);
     return Object.fromEntries(Object.keys(keys).map(axis => [axis, keys[axis] || virtual[axis] || physical[axis]]));
   }
+  function secondaryInput(blocked) {
+    if (!shared) return neutral();
+    const other = otherDevice ? devices.find(pad => pad !== currentPad && deviceKey(pad) === otherDevice) :
+      devices.find(pad => pad !== currentPad && profileFor(pad));
+    const key = other ? deviceKey(other) : '';
+    const states = [0, 1, 3].map(index => Boolean(other?.buttons[index]?.pressed));
+    if (!blocked && other?.mapping === 'standard' && key === otherDevice) {
+      for (const [index, name] of ['arm', 'turtle', 'stop'].entries()) {
+        if (states[index] && !otherButtons[index]) action(name, 2);
+      }
+    }
+    otherDevice = key || otherDevice;
+    otherButtons = states;
+    if (blocked) return neutral();
+    const keyValues = keyboard(secondPilotKeys);
+    const pad = padValues(profileFor(other), other?.axes ?? []);
+    return Object.fromEntries(Object.keys(keyValues).map(axis => [axis, keyValues[axis] || pad[axis]]));
+  }
   return {
-    poll, clear, clearVirtual,
+    poll, clear, clearVirtual, secondaryInput,
+    shared(value) { shared = value; otherDevice = undefined; otherButtons = []; clear(); },
     get pad() { return currentPad; },
     get padError() { return padError; },
     get profile() { return activeProfile(); },
