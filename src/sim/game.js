@@ -1,7 +1,7 @@
 import { controlDefaults, courseDefaults, field, profiles, radius, rolesFor, secondPilotId, standardGoals, STEP } from './config.js';
 import { autopilot, boundDrone, clamp, collideDrones, collideGoal, distance, droneAt, neutral, point,
   goalCoordinate, stepDrone, turtle } from './flight.js';
-import { evaluateTraining, levels, newTraining } from './training.js';
+import { evaluateTraining, levels, newTraining, tipDuration } from './training.js';
 import { newTrace, recordFrame, recordGoal } from './trace.js';
 
 const randomId = () => globalThis.crypto?.randomUUID?.() ?? (Date.now() + '-' + Math.random().toString(36).slice(2));
@@ -71,10 +71,6 @@ function createRoster(game, roster) {
   const start = game.practice?.start ?? [-1.45, radius, 0, 0];
   const [x, , z, yaw] = start;
   const player = droneAt({ id: game.pilotId, x, y: radius, z, yaw });
-  if (game.practice?.flipped) {
-    player.flipped = true;
-    player.roll = Math.PI;
-  }
   if (game.practice?.opponent) {
     const attacking = game.practice.opponent === 'attack';
     return [player, droneAt({ id: 'AI-training', team: 1, role: attacking ? 'striker' : 'defender',
@@ -85,7 +81,7 @@ function createRoster(game, roster) {
 
 export function doAction(game, id, action) {
   const drone = game.drones.find(drone => drone.id === id);
-  if (!drone || game.paused || game.phase === 'finished' || game.training?.result) return;
+  if (!drone || game.paused || game.phase === 'finished' || game.training?.result || game.training?.tipRemaining > 0) return;
   if (action === 'check' && game.phase === 'inspection') {
     game.training.checked = true;
     game.phase = 'countdown';
@@ -287,6 +283,15 @@ export function tickGame(game, inputs = {}, dt = STEP) {
     if (game.training?.timedFromWhistle) game.training.started = true;
     emit(game, 'start');
     if (game.penaltyQueue.length) startPenalty(game);
+    return;
+  }
+  const training = game.training;
+  if (training?.tipRemaining > 0) {
+    training.tipRemaining = Math.max(0, training.tipRemaining - dt);
+    const progress = 1 - training.tipRemaining / tipDuration;
+    const drone = game.drones[0];
+    drone.roll = Math.PI * progress * progress * (3 - 2 * progress);
+    drone.flipped = training.tipRemaining === 0;
     return;
   }
   game.time += dt;

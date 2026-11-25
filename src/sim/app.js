@@ -309,11 +309,14 @@ function updateHud(now) {
   setText(ui.heading, Math.round((((player?.yaw ?? 0) * 180 / Math.PI) % 360 + 360) % 360) % 360 + '°');
   const nearWall = player && (Math.abs(player.p.x) > state.field.length / 2 - .27 ||
     Math.abs(player.p.z) > state.field.width / 2 - .27 || player.p.y > state.field.height - .27);
-  const flightStatus = player ? (!player.active ? '暫停上場 · 罰球中' : player.flipped ? '翻覆 · 落地後按 T' : player.recovering ? '翻正中' :
+  const tipping = training?.tipRemaining > 0;
+  const flightStatus = player ? (!player.active ? '暫停上場 · 罰球中' : tipping ? '正在原地翻覆' :
+    player.flipped ? '翻覆 · 落地後按 T' : player.recovering ? '翻正中' :
     player.armed ? state.blocked[player.team] ? '回己方半場' : nearWall ? '接近網籠' : '已解鎖' : '待解鎖') : '觀戰';
   setText(ui['flight-status'], flightStatus);
   ui.arm.firstChild.nodeValue = player?.armed ? '鎖定馬達 ' : '解鎖馬達 ';
-  ui.arm.disabled = !player?.active || player.flipped || ['inspection', 'break', 'finished'].includes(state.phase) || replay.active;
+  ui.arm.disabled = !player?.active || player.flipped || Boolean(player.recovering) || tipping ||
+    ['inspection', 'break', 'finished'].includes(state.phase) || replay.active;
   ui.turtle.disabled = !player?.active || !player.flipped || replay.active;
   ui.stop.disabled = !player?.active || !player.armed || replay.active;
   ui.reset.disabled = mode === 'lan' || replay.active;
@@ -332,8 +335,16 @@ function updateHud(now) {
     timing.progress.value = training.stage;
     const step = stage ? (training.stage + 1) + '/' + training.level.stages.length + ' · ' +
       stageLabel(stage) + (stage.seconds ? '　' + training.hold.toFixed(1) + '/' + stage.seconds + ' 秒' : '') : '路線已完成';
-    const instruction = !training.started && training.takeoffTarget ?
-      '解鎖後垂直起飛，先到 ' + training.takeoffTarget.y + ' m 的提示球' : step;
+    let instruction = step;
+    if (!training.started && training.takeoffTarget) {
+      instruction = '解鎖後垂直起飛，先到 ' + training.takeoffTarget.y + ' m 的提示圈';
+    } else if (stage?.type === 'turtle') {
+      if (tipping) instruction = '正在原地翻覆';
+      else if (player?.recovering) instruction = '翻正中，請等機體恢復直立';
+      else instruction = '已翻覆，按 T 或點「翻正」';
+    } else if (training.level.startTip && stage?.type === 'point' && !player?.armed) {
+      instruction = '已翻正，解鎖後垂直起飛';
+    }
     setText(timing.segment, instruction);
     if (training.result && !resultSaved) saveResult(training);
   }

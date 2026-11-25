@@ -171,11 +171,48 @@ test('30 training definitions terminate once, keep coordinates inside their cour
   }
 });
 
+test('course waypoints accept swept crossings at any heading and keep explicit turns', () => {
+  const settings = { pass: 92, collisionPenalty: 2, timeScale: 1 };
+  const stage = levels[1].stages[0];
+  for (const yaw of [0, Math.PI / 2, Math.PI, -Math.PI / 2]) {
+    const run = newTraining(levels[1], settings);
+    const drone = droneAt({ yaw });
+    drone.prev = point(stage.p.x - .5, stage.p.y, stage.p.z);
+    drone.p = point(stage.p.x + .5, stage.p.y, stage.p.z);
+    assert.equal(evaluateTraining(run, drone, [], STEP, false), true);
+  }
+  const turn = newTraining(levels[9], settings);
+  turn.stage = 1;
+  const drone = droneAt({});
+  drone.p = turn.level.stages[1].p;
+  assert.equal(evaluateTraining(turn, drone, [], STEP, false), false);
+  drone.yaw = Math.PI;
+  assert.equal(evaluateTraining(turn, drone, [], STEP, false), true);
+});
+
 test('Turtle drill and simulated continuous run-time gate training', () => {
   const turtle = gameCreate({ mode: 'training', level: 19 });
-  assert.equal(turtle.drones[0].flipped, true);
+  const drone = turtle.drones[0];
+  const start = { ...drone.p };
+  assert.equal(drone.roll, 0);
+  assert.equal(drone.flipped, false);
+  run(turtle, .4);
+  assert.ok(drone.roll > 0 && drone.roll < Math.PI);
+  doAction(turtle, 'pilot', 'arm');
   doAction(turtle, 'pilot', 'turtle');
+  assert.equal(drone.armed, false);
+  assert.equal(drone.recovering, 0);
+  run(turtle, .6);
+  assert.equal(drone.flipped, true);
+  assert.equal(drone.roll, Math.PI);
+  assert.deepEqual(drone.p, start);
+  assert.equal(turtle.training.elapsed, 0);
+  assert.equal(turtle.training.stage, 0);
+  doAction(turtle, 'pilot', 'turtle');
+  doAction(turtle, 'pilot', 'arm');
+  assert.equal(drone.armed, false);
   run(turtle, .71);
+  assert.equal(drone.roll, 0);
   assert.equal(turtle.training.stage, 1);
   doAction(turtle, 'pilot', 'arm');
   run(turtle, .7, { pilot: { ...neutral(), throttle: .82 } });

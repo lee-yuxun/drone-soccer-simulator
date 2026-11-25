@@ -89,7 +89,11 @@ try {
   await waitUntil("document.querySelector('#altitude').textContent === '0.10' && document.querySelector('#training-strip').textContent.includes('垂直起飛')",
     'Airborne drill should wait grounded until the pilot takes off');
   await select('level', '19');
-  await click('#turtle');
+  await waitUntil("document.querySelector('#training-strip').textContent.includes('正在原地翻覆')",
+    'Turtle drill should show the in-place tip');
+  await waitUntil("!document.querySelector('#turtle').disabled && document.querySelector('#arm').disabled",
+    'Turtle drill should wait upside down with motors locked');
+  await tap('KeyT', 't', 84);
   await waitUntil("document.querySelector('progress').value === 1", 'Turtle recovery did not count');
   await click('#arm');
   await key('KeyW', 'w', 87, 'keyDown');
