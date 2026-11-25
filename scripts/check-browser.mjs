@@ -122,7 +122,7 @@ try {
     '再試一次');
   await click('#training-result .primary');
   await waitUntil("document.querySelector('#level').value === '25' && document.querySelector('#training-result').hidden && " +
-    "document.querySelector('#banner').textContent.includes('準備起飛')", 'Retry should restart the same drill');
+    "document.querySelector('#training-step').textContent.includes('準備起飛')", 'Retry should restart the same drill');
   await click('[data-dialog=settings-dialog]');
   await waitUntil("document.querySelector('#settings-dialog').open && document.querySelector('[data-stick-mode]')", 'Pilot settings missing');
   await click('[data-settings=media]');

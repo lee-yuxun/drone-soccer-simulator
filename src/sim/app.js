@@ -327,7 +327,9 @@ function updateHud(now) {
   $('controller-button').toggleAttribute('data-connected', Boolean(input.profile));
   if ($('controller-dialog').open) updateControllerPanel();
   setText(ui['field-status'], [state.field.length, state.field.width, state.field.height].join(' × ') + ' m');
-  const banner = finishedTraining ? '' : titleForState(state);
+  const title = titleForState(state);
+  const trainingCountdown = training && state.phase === 'countdown';
+  const banner = training && (finishedTraining || trainingCountdown || state.phase === 'inspection') ? '' : title;
   ui.banner.hidden = !banner || replay.active;
   setText(ui.banner, banner);
   if (now > toastUntil) ui['event-toast'].hidden = true;
@@ -340,7 +342,9 @@ function updateHud(now) {
     const step = stage ? (training.stage + 1) + '/' + training.level.stages.length + ' · ' +
       stageLabel(stage) + (stage.seconds ? '　' + training.hold.toFixed(1) + '/' + stage.seconds + ' 秒' : '') : '路線已完成';
     let instruction = step;
-    if (!training.started && training.takeoffTarget) {
+    if (trainingCountdown) {
+      instruction = title;
+    } else if (!training.started && training.takeoffTarget) {
       instruction = '解鎖後垂直起飛，先到 ' + training.takeoffTarget.y + ' m 的提示圈';
     } else if (stage?.type === 'turtle') {
       if (tipping) instruction = '正在原地翻覆';
